@@ -9,6 +9,7 @@ Goal: lightweight, locally reproducible unit and regression checks.
 
 - [x] Add a minimal `pytest` smoke suite (no network; stubbed settings).
 - [x] Cover Phase 1/2 basics: root/sources pages render; playlist sources create playlists; channel discovery hydrates playlists.
+- [x] GitHub Actions CI (Linux) runs pytest on push/PR.
 - [ ] Expand coverage: CRUD (sources/playlists/pin), sync pipeline (mocked YouTube responses), search/FTS queries, export formatters once added.
 - [ ] One-step local run: `pytest`.
 

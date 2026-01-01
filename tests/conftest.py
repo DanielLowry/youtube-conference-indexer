@@ -20,14 +20,23 @@ _MODULES_TO_CLEAR = [
 def app_ctx(tmp_path: Path, monkeypatch):
     """Fresh app and DB per test; ensures settings pick up test env vars."""
     db_path = tmp_path / "test.db"
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    db_url = db_path.as_posix()
+    full_url = f"sqlite:///{db_url}"
+    monkeypatch.setenv("DATABASE_URL", full_url)
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
 
     for module in _MODULES_TO_CLEAR:
         sys.modules.pop(module, None)
 
     from app import main as main_module  # noqa: WPS433 (import inside fixture)
-    from app.database import SessionLocal  # noqa: WPS433
+    from app.database import SessionLocal, engine  # noqa: WPS433
+    from app import models  # noqa: WPS433
+    from app.config import settings  # noqa: WPS433
+
+    assert "test.db" in str(settings.database_url)
+    assert str(engine.url) == full_url
+
+    models.Base.metadata.create_all(bind=engine)
 
     yield {"app": main_module.app, "SessionLocal": SessionLocal}
 
