@@ -7,3 +7,4 @@ isodate
 jinja2
 pydantic-settings
 google-api-python-client
+pytest
