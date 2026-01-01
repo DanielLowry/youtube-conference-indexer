@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<nav class="bg-gray-800 text-white p-4 rounded mb-4">
+    <div class="container mx-auto">
+        <a href="/" class="font-bold">Home</a>
+        <a href="/sources" class="ml-4">Sources</a>
+        <a href="/search" class="ml-4">Search</a>
+    </div>
+</nav>
+
+<h1 class="text-2xl font-bold mb-4">YouTube Conference Indexer</h1>
+
+<div class="mb-4">
+    <button
+        hx-post="/sync/run"
+        hx-target="#sync-status"
+        hx-swap="innerHTML"
+        class="inline-flex justify-center rounded-md border border-transparent bg-green-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+    >
+        Sync Pinned Playlists
+    </button>
+</div>
+
+<div id="sync-status"></div>
+
+<p>Welcome to the indexer. The application is running.</p>
+
+{% endblock %}
