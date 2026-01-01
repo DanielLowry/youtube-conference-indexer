@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import datetime
 from typing import List, Optional
 
@@ -17,8 +17,7 @@ class VideoState(VideoStateBase):
     id: int
     video_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TagBase(BaseModel):
@@ -32,8 +31,7 @@ class TagCreate(TagBase):
 class Tag(TagBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class VideoBase(BaseModel):
@@ -55,8 +53,7 @@ class Video(VideoBase):
     tags: List[Tag] = []
     state: Optional[VideoState] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PlaylistBase(BaseModel):
@@ -76,8 +73,7 @@ class Playlist(PlaylistBase):
     last_synced_at: datetime.datetime | None = None
     videos: List[Video] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SourceBase(BaseModel):
@@ -95,5 +91,4 @@ class Source(SourceBase):
     created_at: datetime.datetime
     playlists: list[Playlist] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -26,13 +26,13 @@ def get_db():
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
 @app.get("/sources", response_class=HTMLResponse)
 async def read_sources(request: Request, db: Session = Depends(get_db)):
     sources = crud.get_sources(db)
-    return templates.TemplateResponse("sources.html", {"request": request, "sources": sources})
+    return templates.TemplateResponse(request, "sources.html", {"request": request, "sources": sources})
 
 
 @app.post("/sources", response_class=RedirectResponse)
@@ -87,7 +87,7 @@ async def discover_playlists(
 
     db.refresh(source)
     return templates.TemplateResponse(
-        "playlist-list.html", {"request": request, "playlists": source.playlists}
+        request, "playlist-list.html", {"request": request, "playlists": source.playlists}
     )
 
 
@@ -97,7 +97,7 @@ async def toggle_pin_playlist(
 ):
     playlist = crud.toggle_playlist_pinned(db, playlist_id=playlist_id)
     return templates.TemplateResponse(
-        "playlist-item.html", {"request": request, "playlist": playlist}
+        request, "playlist-item.html", {"request": request, "playlist": playlist}
     )
 
 
@@ -138,8 +138,8 @@ async def search_videos_page(
     videos = crud.search_videos(db, query=q)
     if "hx-request" in request.headers:
         return templates.TemplateResponse(
-            "video-list.html", {"request": request, "videos": videos}
+            request, "video-list.html", {"request": request, "videos": videos}
         )
     return templates.TemplateResponse(
-        "search.html", {"request": request, "videos": videos}
+        request, "search.html", {"request": request, "videos": videos}
     )
