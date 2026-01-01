@@ -22,7 +22,7 @@ Goal: concise how-to-use guide for future you.
 
 --
 
-## Phase 1: Foundation (Milestone 0) - [x]
+## Phase 1: Foundation (Milestone 0) — MVP - [x]
 Goal: Core project structure, dependencies, and minimal web app.
 
 - [x] Project bootstrap: repo structure, `requirements.txt`, `.env`, FastAPI skeleton (`/`).
@@ -34,7 +34,7 @@ Goal: Core project structure, dependencies, and minimal web app.
 
 --
 
-## Phase 2: Source Discovery and Pinning - [x]
+## Phase 2: Source Discovery and Pinning — MVP - [x]
 Goal: Add/list/delete sources; discover playlists; pin playlists.
 
 - [x] Models/schemas: Source, Playlist (with `pinned`), Pydantic schemas.
@@ -45,7 +45,7 @@ Goal: Add/list/delete sources; discover playlists; pin playlists.
 
 --
 
-## Phase 3: The Async Sync Engine - [~]
+## Phase 3: The Async Sync Engine — MVP - [~]
 Goal: Ingest video metadata from pinned playlists.
 
 - [x] Video model/schema and migrations; initial state creation on insert.
@@ -57,7 +57,7 @@ Goal: Ingest video metadata from pinned playlists.
 
 --
 
-## Phase 4: Search and Curation - [~]
+## Phase 4: Search and Curation — MVP - [~]
 Goal: Full-text search plus curation state and tags.
 
 - [x] FTS5 virtual table and triggers migration.
@@ -69,7 +69,7 @@ Goal: Full-text search plus curation state and tags.
 
 --
 
-## Phase 5: Export - [ ]
+## Phase 5: Export — MVP - [ ]
 Goal: Export curated lists in Markdown/CSV.
 
 - [ ] Export logic: `export.py` with Markdown/CSV generators.
@@ -79,7 +79,7 @@ Goal: Export curated lists in Markdown/CSV.
 
 --
 
-## Phase 6: Optimization - [ ]
+## Phase 6: Optimization — Post-MVP - [ ]
 Goal: Efficiency and usability improvements.
 
 - [ ] Incremental refresh: skip already-synced video IDs per playlist.

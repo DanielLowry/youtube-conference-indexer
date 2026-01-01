@@ -1,8 +1,10 @@
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+import datetime
+import logging
+
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-import datetime
 from typing import Optional
 
 from . import crud, models, schemas, youtube
@@ -101,32 +103,51 @@ async def toggle_pin_playlist(
     )
 
 
-@app.post("/sync/run", response_class=HTMLResponse)
-async def run_sync(request: Request, db: Session = Depends(get_db)):
-    pinned_playlists = crud.get_pinned_playlists(db)
-    total_videos_synced = 0
-    for playlist in pinned_playlists:
+def _sync_playlist_videos(playlist_id: int):
+    """Background job to sync a single playlist."""
+    db = SessionLocal()
+    try:
+        playlist = crud.get_playlist(db, playlist_id=playlist_id)
+        if not playlist:
+            return
+
         videos_data = youtube.get_videos_for_playlist(playlist.external_id)
+        new_count = 0
         for item in videos_data:
             video_id = item["id"]
             existing_video = crud.get_video_by_external_id(db, external_id=video_id)
-            if not existing_video:
-                video = schemas.VideoCreate(
-                    external_id=video_id,
-                    title=item["snippet"]["title"],
-                    description=item["snippet"]["description"],
-                    published_at=datetime.datetime.fromisoformat(item["snippet"]["publishedAt"].replace("Z", "+00:00")),
-                    duration_seconds=item["contentDetails"]["duration_seconds"],
-                    channel_title=item["snippet"]["channelTitle"],
-                )
-                crud.create_video(db, video=video, playlist_id=playlist.id)
-                total_videos_synced += 1
+            if existing_video:
+                continue
+            video = schemas.VideoCreate(
+                external_id=video_id,
+                title=item["snippet"]["title"],
+                description=item["snippet"].get("description"),
+                published_at=datetime.datetime.fromisoformat(
+                    item["snippet"]["publishedAt"].replace("Z", "+00:00")
+                ),
+                duration_seconds=item["contentDetails"]["duration_seconds"],
+                channel_title=item["snippet"]["channelTitle"],
+            )
+            crud.create_video(db, video=video, playlist_id=playlist.id)
+            new_count += 1
         playlist.last_synced_at = datetime.datetime.utcnow()
         db.commit()
+        logging.info("Synced %s new videos for playlist %s", new_count, playlist.external_id)
+    except Exception:
+        logging.exception("Sync failed for playlist_id=%s", playlist_id)
+    finally:
+        db.close()
+
+
+@app.post("/sync/run", response_class=HTMLResponse)
+async def run_sync(background_tasks: BackgroundTasks, request: Request, db: Session = Depends(get_db)):
+    pinned_playlists = crud.get_pinned_playlists(db)
+    for playlist in pinned_playlists:
+        background_tasks.add_task(_sync_playlist_videos, playlist.id)
 
     return HTMLResponse(f"""
     <div id="sync-status" class="text-green-500">
-        Sync complete. Synced {total_videos_synced} new videos.
+        Sync started for {len(pinned_playlists)} pinned playlist(s). This may take a moment.
     </div>
     """)
 

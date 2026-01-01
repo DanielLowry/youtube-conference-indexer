@@ -38,7 +38,7 @@ def app_ctx(tmp_path: Path, monkeypatch):
 
     models.Base.metadata.create_all(bind=engine)
 
-    yield {"app": main_module.app, "SessionLocal": SessionLocal}
+    yield {"app": main_module.app, "SessionLocal": SessionLocal, "models": models}
 
 
 @pytest.fixture
