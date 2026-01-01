@@ -67,13 +67,13 @@ Goal: Full-text search plus curation state and tags.
 
 --
 
-## Phase 5: Export — MVP - [ ]
+## Phase 5: Export — MVP - [x]
 Goal: Export curated lists in Markdown/CSV.
 
-- [ ] Export logic: `export.py` with Markdown/CSV generators.
-- [ ] Export endpoints: `/export/markdown`, `/export/csv` returning files for selected states (e.g., queued).
-- [ ] UI: buttons to trigger exports.
-- [ ] Verification: download files contain expected metadata.
+- [x] Export logic: `export.py` with Markdown/CSV generators.
+- [x] Export endpoints: `/export/markdown`, `/export/csv` returning files for selected states (e.g., queued).
+- [x] UI: buttons to trigger exports.
+- [~] Verification: tests cover export generation; manual download check recommended.
 
 --
 

@@ -24,6 +24,17 @@
 
 <div id="sync-status"></div>
 
+<div class="mt-6 flex space-x-2">
+    <a
+        href="/export/markdown?status=queued"
+        class="inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+    >Export Markdown (queued)</a>
+    <a
+        href="/export/csv?status=queued"
+        class="inline-flex justify-center rounded-md border border-transparent bg-gray-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+    >Export CSV (queued)</a>
+</div>
+
 <p>Welcome to the indexer. The application is running.</p>
 
 {% endblock %}

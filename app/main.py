@@ -2,12 +2,12 @@ import datetime
 import logging
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from . import crud, models, schemas, youtube
+from . import crud, models, schemas, youtube, export
 from .database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
@@ -182,6 +182,33 @@ async def add_video_tag(
     return templates.TemplateResponse(
         request, "video-item.html", {"request": request, "video": video}
     )
+
+
+def _export_videos_content(db: Session, fmt: str, status: Optional[str]):
+    videos = crud.get_videos(db, status=status)
+    if fmt == "markdown":
+        content = export.generate_markdown_export(videos)
+        media_type = "text/markdown"
+        filename = "videos.md"
+    else:
+        content = export.generate_csv_export(videos)
+        media_type = "text/csv"
+        filename = "videos.csv"
+    return StreamingResponse(
+        iter([content]),
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/export/markdown")
+async def export_markdown(status: Optional[str] = None, db: Session = Depends(get_db)):
+    return _export_videos_content(db, fmt="markdown", status=status)
+
+
+@app.get("/export/csv")
+async def export_csv(status: Optional[str] = None, db: Session = Depends(get_db)):
+    return _export_videos_content(db, fmt="csv", status=status)
 
 
 @app.delete("/videos/{video_id}/tags", response_class=HTMLResponse)

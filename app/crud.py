@@ -105,6 +105,13 @@ def toggle_playlist_pinned(db: Session, playlist_id: int):
     return db_playlist
 
 
+def get_videos(db: Session, status: str | None = None):
+    query = db.query(models.Video)
+    if status:
+        query = query.join(models.VideoState).filter(models.VideoState.status == status)
+    return query.all()
+
+
 def get_or_create_tag(db: Session, name: str):
     tag = db.query(models.Tag).filter(models.Tag.name == name).first()
     if tag:
