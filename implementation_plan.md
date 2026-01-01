@@ -45,15 +45,14 @@ Goal: Add/list/delete sources; discover playlists; pin playlists.
 
 --
 
-## Phase 3: The Async Sync Engine — MVP - [~]
+## Phase 3: The Async Sync Engine — MVP - [x]
 Goal: Ingest video metadata from pinned playlists.
 
 - [x] Video model/schema and migrations; initial state creation on insert.
 - [x] YouTube ingestion helpers: playlistItems plus videos batch with duration parsing.
-- [~] Sync endpoint `/sync/run` and UI button exist, but run inline (no BackgroundTasks, no error handling).
-- [ ] Background task integration: trigger per pinned playlist with FastAPI `BackgroundTasks`; keep request quick.
+- [x] Sync endpoint `/sync/run` schedules per-playlist background tasks; sync helper handles inserts/idempotence.
 - [ ] Robustness: handle API failures/quota, log counts, return user-friendly status.
-- [~] Verification: basic sync works; needs non-blocking run and validation against DB contents.
+- [~] Verification: background sync covered in tests; needs live API check for real playlists.
 
 --
 
