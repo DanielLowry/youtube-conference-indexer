@@ -43,7 +43,19 @@ async def create_source_from_form(
     external_id: str = Form(...)
 ):
     source = schemas.SourceCreate(name=name, type=type, external_id=external_id)
-    crud.create_source(db=db, source=source)
+    created_source = crud.create_source(db=db, source=source)
+
+    # For playlist-type sources, create a playlist record immediately so it appears in the UI
+    if type == "playlist":
+        existing = crud.get_playlist_by_external_id(db, external_id=external_id)
+        if not existing:
+            playlist = schemas.PlaylistCreate(
+                external_id=external_id,
+                title=name,
+                description=None,
+            )
+            crud.create_playlist(db, playlist=playlist, source_id=created_source.id)
+
     return RedirectResponse(url="/sources", status_code=303)
 
 

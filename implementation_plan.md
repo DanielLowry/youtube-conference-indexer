@@ -8,8 +8,16 @@ Legend: `[x]` = complete, `[~]` = partially complete, `[ ]` = not started.
 Goal: lightweight, locally reproducible unit and regression checks.
 
 - [x] Add a minimal `pytest` smoke suite (no network; stubbed settings).
+- [x] Cover Phase 1/2 basics: root/sources pages render; playlist sources create playlists; channel discovery hydrates playlists.
 - [ ] Expand coverage: CRUD (sources/playlists/pin), sync pipeline (mocked YouTube responses), search/FTS queries, export formatters once added.
 - [ ] One-step local run: `pytest`.
+
+--
+
+## Documentation - [ ]
+Goal: concise how-to-use guide for future you.
+
+- [ ] Add `docs/how-to-use.md` covering setup, adding sources/playlists, discovery, pinning, sync, search, exports, and running tests.
 
 --
 
@@ -30,7 +38,7 @@ Goal: Add/list/delete sources; discover playlists; pin playlists.
 
 - [x] Models/schemas: Source, Playlist (with `pinned`), Pydantic schemas.
 - [x] Sources CRUD API and UI: `/sources` list/add/delete with HTMX form.
-- [x] Playlist discovery: channel discovery via YouTube API with HTMX update.
+- [x] Playlist discovery: channel discovery via YouTube API with HTMX update; playlist sources create immediate playlist entries.
 - [x] Pinning: toggle endpoint `/playlists/{id}/pin` with UI star control.
 - [~] Verification: add a real channel, fetch playlists, pin/unpin, confirm DB persistence.
 
