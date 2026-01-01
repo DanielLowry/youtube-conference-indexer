@@ -93,3 +93,4 @@ Goal: Efficiency and usability improvements.
 - [ ] Incremental refresh: skip already-synced video IDs per playlist.
 - [ ] Bulk actions: Alpine.js select-all with endpoint for batch status updates.
 - [ ] Observability: `sync_runs` table for timings/status/new counts; status page display.
+- [ ] Optional DB portability: export/import a SQLite file so it can be moved to another device.

@@ -15,7 +15,7 @@ Create `.env` in the repo root (defaults to SQLite at `data/indexer.db`):
 YOUTUBE_API_KEY=your_api_key_here
 DATABASE_URL=sqlite:///./data/indexer.db
 ```
-The SQLite file and tables are created automatically on first run.
+The SQLite file and tables are created automatically on first run. If you don’t want persistence, you can skip setting `DATABASE_URL` and run in in-memory mode (see “DB-free mode” below).
 
 ## Run the app
 ```bash
@@ -41,4 +41,6 @@ CI mirrors this on GitHub Actions (Linux). Tests stub YouTube calls; no network 
 ## Notes
 - If using a custom DB location, set `DATABASE_URL` accordingly. For SQLite, the file is created automatically.
 - Alembic is configured; current schema is up to date with the code. If you change models, add a migration before deployment.
-- DB-free mode: If the configured DB is unavailable, the app falls back to in-memory (you’ll see a red warning on the home page). You can also switch to in-memory or retry the configured DB via the buttons on the home page. In-memory mode is ephemeral—nothing persists across restarts.
+- DB options:
+  - SQLite (default): persistent file at `data/indexer.db` (or your `DATABASE_URL`). No extra setup; it’s created automatically.
+  - DB-free mode: If the configured DB is unavailable, the app falls back to in-memory (you’ll see a red warning on the home page). You can also switch to in-memory or retry the configured DB via the buttons on the home page. In-memory mode is ephemeral—nothing persists across restarts.
