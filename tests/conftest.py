@@ -28,17 +28,22 @@ def app_ctx(tmp_path: Path, monkeypatch):
     for module in _MODULES_TO_CLEAR:
         sys.modules.pop(module, None)
 
+    from app import database  # noqa: WPS433
+    database.init_engine(full_url)
+
     from app import main as main_module  # noqa: WPS433 (import inside fixture)
-    from app.database import SessionLocal, engine  # noqa: WPS433
     from app import models  # noqa: WPS433
     from app.config import settings  # noqa: WPS433
 
     assert "test.db" in str(settings.database_url)
-    assert str(engine.url) == full_url
+    assert str(database.engine.url) == full_url
 
-    models.Base.metadata.create_all(bind=engine)
-
-    yield {"app": main_module.app, "SessionLocal": SessionLocal, "models": models}
+    yield {
+        "app": main_module.app,
+        "SessionLocal": database.SessionLocal,
+        "models": models,
+        "database": database,
+    }
 
 
 @pytest.fixture

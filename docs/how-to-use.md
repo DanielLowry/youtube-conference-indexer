@@ -1,0 +1,44 @@
+# YouTube Conference Indexer — How to Use
+
+## Prereqs
+- Python 3.11+
+- `uv` installed (used for env + deps)
+- YouTube Data API v3 key
+
+## Setup
+```bash
+uv venv
+uv pip install -r requirements.txt
+```
+Create `.env` in the repo root (defaults to SQLite at `data/indexer.db`):
+```
+YOUTUBE_API_KEY=your_api_key_here
+DATABASE_URL=sqlite:///./data/indexer.db
+```
+The SQLite file and tables are created automatically on first run.
+
+## Run the app
+```bash
+uv run uvicorn app.main:app --reload
+```
+Open http://127.0.0.1:8000
+
+## Workflow
+1) **Add sources**: Go to `/sources`, add a Channel ID or Playlist ID.
+2) **Discover playlists (channels only)**: Click “Discover Playlists” to fetch channel playlists.
+3) **Pin**: Click the star to pin playlists you care about.
+4) **Sync**: On the home page, click “Sync Pinned Playlists” (runs in background). Requires a valid API key.
+5) **Search**: Visit `/search` and type to search titles/descriptions (FTS).
+6) **Curation**: In search results, update status/notes/score; add/remove tags inline.
+7) **Export**: From the home page, download Markdown or CSV (optionally filtered by status via query string, e.g., `?status=queued`).
+
+## Testing
+```bash
+uv run pytest
+```
+CI mirrors this on GitHub Actions (Linux). Tests stub YouTube calls; no network needed.
+
+## Notes
+- If using a custom DB location, set `DATABASE_URL` accordingly. For SQLite, the file is created automatically.
+- Alembic is configured; current schema is up to date with the code. If you change models, add a migration before deployment.
+- DB-free mode: If the configured DB is unavailable, the app falls back to in-memory (you’ll see a red warning on the home page). You can also switch to in-memory or retry the configured DB via the buttons on the home page. In-memory mode is ephemeral—nothing persists across restarts.

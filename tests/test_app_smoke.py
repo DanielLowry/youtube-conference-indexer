@@ -225,3 +225,19 @@ def test_export_endpoints(client: TestClient, app_ctx):
 
     resp = client.get("/export/csv?status=queued")
     assert resp.status_code == 200
+
+
+def test_no_db_mode_toggle_banner(client: TestClient, app_ctx):
+    # Switch to memory mode
+    client.post("/db/use-memory")
+    home = client.get("/")
+    assert "NO-DB" in home.text
+    assert "in-memory" in home.text.lower()
+
+    # Switch back to primary DB
+    switched = app_ctx["database"].switch_to_primary()
+    if not switched:
+        import pytest
+        pytest.skip("Primary DB unavailable in test environment")
+    home = client.get("/")
+    assert "NO-DB" not in home.text

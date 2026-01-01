@@ -18,7 +18,7 @@ Goal: lightweight, locally reproducible unit and regression checks.
 ## Documentation - [ ]
 Goal: concise how-to-use guide for future you.
 
-- [ ] Add `docs/how-to-use.md` covering setup, adding sources/playlists, discovery, pinning, sync, search, exports, and running tests.
+- [x] Add `docs/how-to-use.md` covering setup, adding sources/playlists, discovery, pinning, sync, search, exports, and running tests.
 
 --
 
@@ -77,7 +77,17 @@ Goal: Export curated lists in Markdown/CSV.
 
 --
 
-## Phase 6: Optimization — Post-MVP - [ ]
+## Phase 6: DB-Optional Mode — Post-MVP - [~]
+Goal: Allow running without a persistent DB, with clear warnings and a toggle.
+
+- [x] Detect unreachable/missing DB on startup and fall back to in-memory with a prominent home-page warning.
+- [x] Add UI control to switch to “DB-free” mode (in-memory) and to re-attempt connecting to the configured DB; warn that state is ephemeral.
+- [~] Gracefully degrade DB-dependent features (sync/search/exports) with clear messaging when in DB-free mode.
+- [~] Update docs and tests to cover DB-optional behavior (docs done; tests still to add).
+
+--
+
+## Phase 7: Optimization — Post-MVP - [ ]
 Goal: Efficiency and usability improvements.
 
 - [ ] Incremental refresh: skip already-synced video IDs per playlist.

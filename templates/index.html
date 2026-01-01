@@ -24,6 +24,27 @@
 
 <div id="sync-status"></div>
 
+{% if db_state and db_state.mode == "memory" %}
+<div class="mt-4 p-4 rounded bg-red-100 text-red-800 border border-red-300">
+    Running in NO-DB (in-memory) mode. Nothing will persist across restarts.
+</div>
+{% endif %}
+
+<div class="mt-4 flex space-x-2">
+    <form action="/db/use-memory" method="post">
+        <button
+            type="submit"
+            class="inline-flex justify-center rounded-md border border-transparent bg-yellow-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2"
+        >Use In-Memory (No Persistence)</button>
+    </form>
+    <form action="/db/reconnect" method="post">
+        <button
+            type="submit"
+            class="inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        >Retry Database</button>
+    </form>
+</div>
+
 <div class="mt-6 flex space-x-2">
     <a
         href="/export/markdown?status=queued"

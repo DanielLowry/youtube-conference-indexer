@@ -7,10 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from . import crud, models, schemas, youtube, export
-from .database import SessionLocal, engine
-
-models.Base.metadata.create_all(bind=engine)
+from . import crud, models, schemas, youtube, export, database
 
 app = FastAPI()
 
@@ -19,7 +16,7 @@ templates = Jinja2Templates(directory="templates")
 
 # Dependency
 def get_db():
-    db = SessionLocal()
+    db = database.SessionLocal()
     try:
         yield db
     finally:
@@ -28,7 +25,12 @@ def get_db():
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse(request, "index.html", {"request": request})
+    db_state = database.get_db_state()
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {"request": request, "db_state": db_state},
+    )
 
 
 @app.get("/sources", response_class=HTMLResponse)
@@ -105,7 +107,7 @@ async def toggle_pin_playlist(
 
 def _sync_playlist_videos(playlist_id: int):
     """Background job to sync a single playlist."""
-    db = SessionLocal()
+    db = database.SessionLocal()
     try:
         playlist = crud.get_playlist(db, playlist_id=playlist_id)
         if not playlist:
@@ -209,6 +211,18 @@ async def export_markdown(status: Optional[str] = None, db: Session = Depends(ge
 @app.get("/export/csv")
 async def export_csv(status: Optional[str] = None, db: Session = Depends(get_db)):
     return _export_videos_content(db, fmt="csv", status=status)
+
+
+@app.post("/db/use-memory", response_class=RedirectResponse)
+async def use_memory():
+    database.switch_to_memory()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/db/reconnect", response_class=RedirectResponse)
+async def reconnect_db():
+    database.switch_to_primary()
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.delete("/videos/{video_id}/tags", response_class=HTMLResponse)
