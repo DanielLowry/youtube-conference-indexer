@@ -103,3 +103,38 @@ def toggle_playlist_pinned(db: Session, playlist_id: int):
         db.commit()
         db.refresh(db_playlist)
     return db_playlist
+
+
+def get_or_create_tag(db: Session, name: str):
+    tag = db.query(models.Tag).filter(models.Tag.name == name).first()
+    if tag:
+        return tag
+    tag = models.Tag(name=name)
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+    return tag
+
+
+def add_tag_to_video(db: Session, video_id: int, tag_name: str):
+    video = get_video(db, video_id)
+    if not video:
+        return None
+    tag = get_or_create_tag(db, tag_name)
+    if tag not in video.tags:
+        video.tags.append(tag)
+        db.commit()
+        db.refresh(video)
+    return video
+
+
+def remove_tag_from_video(db: Session, video_id: int, tag_name: str):
+    video = get_video(db, video_id)
+    if not video:
+        return None
+    tag = db.query(models.Tag).filter(models.Tag.name == tag_name).first()
+    if tag and tag in video.tags:
+        video.tags.remove(tag)
+        db.commit()
+        db.refresh(video)
+    return video

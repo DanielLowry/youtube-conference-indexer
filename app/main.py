@@ -152,6 +152,53 @@ async def run_sync(background_tasks: BackgroundTasks, request: Request, db: Sess
     """)
 
 
+@app.post("/videos/{video_id}/status", response_class=HTMLResponse)
+async def update_video_status(
+    video_id: int,
+    request: Request,
+    status: str = Form(...),
+    notes: Optional[str] = Form(None),
+    score: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+):
+    state = schemas.VideoStateCreate(status=status, notes=notes, score=score)
+    crud.update_video_state(db, video_id=video_id, state=state)
+    video = crud.get_video(db, video_id=video_id)
+    return templates.TemplateResponse(
+        request, "video-item.html", {"request": request, "video": video}
+    )
+
+
+@app.post("/videos/{video_id}/tags", response_class=HTMLResponse)
+async def add_video_tag(
+    video_id: int,
+    request: Request,
+    tag: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    video = crud.add_tag_to_video(db, video_id=video_id, tag_name=tag.strip())
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return templates.TemplateResponse(
+        request, "video-item.html", {"request": request, "video": video}
+    )
+
+
+@app.delete("/videos/{video_id}/tags", response_class=HTMLResponse)
+async def remove_video_tag(
+    video_id: int,
+    request: Request,
+    tag: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    video = crud.remove_tag_from_video(db, video_id=video_id, tag_name=tag.strip())
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return templates.TemplateResponse(
+        request, "video-item.html", {"request": request, "video": video}
+    )
+
+
 @app.get("/search", response_class=HTMLResponse)
 async def search_videos_page(
     request: Request, q: Optional[str] = None, db: Session = Depends(get_db)

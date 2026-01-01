@@ -61,10 +61,9 @@ Goal: Full-text search plus curation state and tags.
 
 - [x] FTS5 virtual table and triggers migration.
 - [x] Search API/UI: `/search` with FTS-backed lookup and HTMX results.
-- [~] Curation state: `video_states` auto-created, but no update endpoints/UI; tags tables exist but unused.
-- [ ] Curation endpoints/UI: update status/notes/score, add/remove tags, show badges on results.
+- [x] Curation state + tags: endpoints/UI to update status/notes/score; add/remove tags; badges on results.
 - [ ] Filtering: search filters (playlist, duration, etc.) and UI controls.
-- [ ] Verification: search returns synced videos; status/tag changes persist and display.
+- [~] Verification: search returns synced videos; status/tag changes persist (tests cover status/tags).
 
 --
 

@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from app import crud, schemas
 
 
 def test_root_route_renders(client: TestClient):
@@ -121,3 +122,44 @@ def test_sync_background_creates_videos(client: TestClient, app_ctx, monkeypatch
         assert video.playlist.last_synced_at is not None
     finally:
         session.close()
+
+
+def test_update_status_and_tags(client: TestClient, app_ctx):
+    session = app_ctx["SessionLocal"]()
+    try:
+        source = app_ctx["models"].Source(type="playlist", external_id="PLSTAT", name="StatusPlaylist")
+        session.add(source)
+        session.flush()
+        playlist = app_ctx["models"].Playlist(
+            source_id=source.id,
+            external_id="PLSTAT",
+            title="StatusPlaylist",
+            pinned=True,
+        )
+        session.add(playlist)
+        session.commit()
+        video = crud.create_video(
+            session,
+            video=schemas.VideoCreate(
+                external_id="VIDSTATUS",
+                title="Status Video",
+                description="Test",
+                published_at=__import__("datetime").datetime.utcnow(),
+                duration_seconds=60,
+                channel_title="Chan",
+            ),
+            playlist_id=playlist.id,
+        )
+    finally:
+        session.close()
+
+    resp = client.post(
+        f"/videos/{video.id}/status",
+        data={"status": "watching", "notes": "note", "score": 4},
+    )
+    assert resp.status_code == 200
+    assert "watching" in resp.text
+
+    resp = client.post(f"/videos/{video.id}/tags", data={"tag": "c++"})
+    assert resp.status_code == 200
+    assert "c++" in resp.text
