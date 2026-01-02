@@ -15,6 +15,7 @@ templates = Jinja2Templates(directory="templates")
 
 # ensure tables exist once models are loaded
 database.create_tables()
+db_health_ok, db_health_error = database.health_check()
 
 sync_error_message = None
 
@@ -40,6 +41,8 @@ async def read_root(request: Request):
             "db_state": db_state,
             "sync_error_message": sync_error_message,
             "api_key_valid": api_key_valid,
+            "db_health_ok": db_health_ok,
+            "db_health_error": db_health_error,
         },
     )
 
@@ -290,7 +293,19 @@ async def set_api_key(key: str = Form(...)):
 async def search_videos_page(
     request: Request, q: Optional[str] = None, db: Session = Depends(get_db)
 ):
-    videos = crud.search_videos(db, query=q)
+    try:
+        videos = crud.search_videos(db, query=q)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Search failed")
+        error_fragment = f'<div class="p-3 rounded bg-red-100 text-red-800 border border-red-300">Search failed: {exc}</div>'
+        if "hx-request" in request.headers:
+            return HTMLResponse(error_fragment, status_code=500)
+        return HTMLResponse(
+            templates.get_template("base.html").render(
+                request=request, content=error_fragment
+            ),
+            status_code=500,
+        )
     if "hx-request" in request.headers:
         return templates.TemplateResponse(
             request, "video-list.html", {"request": request, "videos": videos}

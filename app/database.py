@@ -73,5 +73,18 @@ def create_tables():
     models.Base.metadata.create_all(bind=engine)
 
 
+def health_check():
+    """Return True if DB is reachable and core tables exist."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        # check a core table exists
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1 FROM videos LIMIT 1"))
+        return True, ""
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)
+
+
 # Initialize on import
 init_engine()

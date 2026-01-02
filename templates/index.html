@@ -26,6 +26,12 @@
     No valid YouTube API key configured. Provide one on the <a href="/api-key" class="underline font-semibold">API Key page</a>.
 </div>
 {% endif %}
+{% if db_health_ok is not none and not db_health_ok %}
+<div class="mt-4 p-4 rounded bg-red-100 text-red-800 border border-red-300">
+    Database issue detected: {{ db_health_error }}. Try <form class="inline" action="/db/reconnect" method="post"><button class="underline font-semibold">reconnect</button></form>
+    or switch to <form class="inline" action="/db/use-memory" method="post"><button class="underline font-semibold">in-memory mode</button></form>.
+</div>
+{% endif %}
 {% if sync_error_message %}
 <div class="mt-2 p-3 rounded bg-red-100 text-red-800 border border-red-300">
     Sync error: {{ sync_error_message }}
