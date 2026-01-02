@@ -13,6 +13,9 @@ app = FastAPI()
 
 templates = Jinja2Templates(directory="templates")
 
+# ensure tables exist once models are loaded
+database.create_tables()
+
 sync_error_message = None
 
 

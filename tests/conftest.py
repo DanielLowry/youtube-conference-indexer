@@ -30,6 +30,7 @@ def app_ctx(tmp_path: Path, monkeypatch):
 
     from app import database  # noqa: WPS433
     database.init_engine(full_url)
+    database.create_tables()
 
     from app import main as main_module  # noqa: WPS433 (import inside fixture)
     from app import models  # noqa: WPS433

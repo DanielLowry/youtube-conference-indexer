@@ -242,3 +242,14 @@ def test_no_db_mode_toggle_banner(client: TestClient, app_ctx):
         assert "in-memory" in home.text.lower()
     else:
         assert "NO-DB" not in home.text
+
+
+def test_search_works_after_db_toggle(client: TestClient, app_ctx):
+    # Ensure search works even after switching DB modes (tables must exist)
+    client.post("/db/use-memory")
+    resp = client.get("/search")
+    assert resp.status_code == 200
+    # Back to primary
+    client.post("/db/reconnect")
+    resp = client.get("/search")
+    assert resp.status_code == 200

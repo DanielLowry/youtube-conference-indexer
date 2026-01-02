@@ -32,7 +32,6 @@ def _bind_engine(url: str, mode: str):
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     current_db_url = url
     db_mode = mode
-    Base.metadata.create_all(bind=engine)
 
 
 def init_engine(url: str | None = None):
@@ -48,6 +47,7 @@ def init_engine(url: str | None = None):
 
 def switch_to_memory():
     _bind_engine("sqlite+pysqlite:///:memory:", mode="memory")
+    create_tables()
 
 
 def switch_to_primary():
@@ -55,6 +55,7 @@ def switch_to_primary():
         _bind_engine(primary_db_url, mode="primary")
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+        create_tables()
         return True
     except OperationalError:
         switch_to_memory()
@@ -63,6 +64,13 @@ def switch_to_primary():
 
 def get_db_state():
     return {"mode": db_mode, "url": current_db_url}
+
+
+def create_tables():
+    """Create tables for all registered models."""
+    from . import models  # noqa: WPS433
+
+    models.Base.metadata.create_all(bind=engine)
 
 
 # Initialize on import
