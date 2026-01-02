@@ -22,7 +22,7 @@ Goal: concise how-to-use guide for future you.
 
 --
 
-## Phase 1: Foundation (Milestone 0) — MVP - [x]
+## Phase 1: Foundation (Milestone 0) – MVP - [x]
 Goal: Core project structure, dependencies, and minimal web app.
 
 - [x] Project bootstrap: repo structure, `requirements.txt`, `.env`, FastAPI skeleton (`/`).
@@ -34,18 +34,18 @@ Goal: Core project structure, dependencies, and minimal web app.
 
 --
 
-## Phase 2: Source Discovery and Pinning — MVP - [x]
+## Phase 2: Source Discovery and Pinning – MVP - [x]
 Goal: Add/list/delete sources; discover playlists; pin playlists.
 
 - [x] Models/schemas: Source, Playlist (with `pinned`), Pydantic schemas.
-- [x] Sources CRUD API and UI: `/sources` list/add/delete with HTMX form.
+- [x] Sources CRUD API and UI: unified on `/` (home) with HTMX form; nav simplified (no separate Sources tab).
 - [x] Playlist discovery: channel discovery via YouTube API with HTMX update; playlist sources create immediate playlist entries.
 - [x] Pinning: toggle endpoint `/playlists/{id}/pin` with UI star control.
 - [~] Verification: add a real channel, fetch playlists, pin/unpin, confirm DB persistence.
 
 --
 
-## Phase 3: The Async Sync Engine — MVP - [x]
+## Phase 3: The Async Sync Engine – MVP - [x]
 Goal: Ingest video metadata from pinned playlists.
 
 - [x] Video model/schema and migrations; initial state creation on insert.
@@ -56,7 +56,7 @@ Goal: Ingest video metadata from pinned playlists.
 
 --
 
-## Phase 4: Search and Curation — MVP - [~]
+## Phase 4: Search and Curation – MVP - [~]
 Goal: Full-text search plus curation state and tags.
 
 - [x] FTS5 virtual table and triggers migration.
@@ -67,7 +67,7 @@ Goal: Full-text search plus curation state and tags.
 
 --
 
-## Phase 5: Export — MVP - [x]
+## Phase 5: Export – MVP - [x]
 Goal: Export curated lists in Markdown/CSV.
 
 - [x] Export logic: `export.py` with Markdown/CSV generators.
@@ -77,7 +77,7 @@ Goal: Export curated lists in Markdown/CSV.
 
 --
 
-## Phase 6: DB-Optional Mode — Post-MVP - [~]
+## Phase 6: DB-Optional Mode – Post-MVP - [~]
 Goal: Allow running without a persistent DB, with clear warnings and a toggle.
 
 - [x] Detect unreachable/missing DB on startup and fall back to in-memory with a prominent home-page warning.
@@ -87,7 +87,20 @@ Goal: Allow running without a persistent DB, with clear warnings and a toggle.
 
 --
 
-## Phase 7: Optimization — Post-MVP - [ ]
+## Phase 7: Live UX & Async Orchestration – Post-MVP - [ ]
+Goal: “Modern app” responsiveness: prefetch, optimistic UI, background sync, and visible progress.
+
+- [ ] Channel selection auto-loads playlists (no extra click): htmx `change delay:150ms` with `hx-sync="this:abort"` and indicator; cache playlists per channel for ~1h; “Refresh” override button.
+- [ ] Pinning is optimistic + triggers fetch immediately: UI updates star instantly; server enqueues background video fetch; pinned row polls status (`load, every 1s`) until done/error, then stops.
+- [ ] Background sync everywhere: trigger on pin/pin-all, on page load (stale-while-revalidate), and on timer; exports should only format cached data (never start heavy work).
+- [ ] Progress UX: per-playlist status dashboard (Queued/Fetching N/M/Ready/Error/Cancelled), progressive counts for large playlists, disable controls while in-flight; cancel/abort stale work when unpinning.
+- [ ] Async hygiene: use `hx-queue`, `hx-sync`, debounce (`delay:`), clear indicators, and job-based status endpoint to avoid races; stale-while-revalidate fragments update when fresh data arrives.
+- [ ] Prefetch/cache warming: trigger lightweight background requests on hover/load where useful; rely on server-side caching to make subsequent interactions instant.
+- [ ] Observability/logging: rich console logs for prefetch, background jobs, cache hits/misses, sync progress, retries/backoff.
+
+--
+
+## Phase 8: Optimization – Post-MVP - [ ]
 Goal: Efficiency and usability improvements.
 
 - [ ] Incremental refresh: skip already-synced video IDs per playlist.
