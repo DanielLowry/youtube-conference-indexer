@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, or_
 
 from . import models, schemas
 
@@ -7,11 +7,31 @@ from . import models, schemas
 def search_videos(db: Session, query: str):
     if not query:
         return db.query(models.Video).all()
-    
+
+    # Wrap query in quotes to avoid FTS operator parsing (e.g., "+" or "-" characters)
+    safe_query = query.strip().replace('"', '""')
+    if not safe_query:
+        return db.query(models.Video).all()
+    fts_param = f'"{safe_query}"'
+
     # We need to find the rowids from the FTS table first
     fts_query = text("SELECT rowid FROM videos_fts WHERE videos_fts MATCH :query")
-    result = db.execute(fts_query, {"query": query})
-    video_ids = [row[0] for row in result]
+    try:
+        result = db.execute(fts_query, {"query": fts_param})
+        video_ids = [row[0] for row in result]
+    except Exception:
+        # Fallback to a simple LIKE search if FTS parsing fails
+        like = f"%{query}%"
+        return (
+            db.query(models.Video)
+            .filter(
+                or_(
+                    models.Video.title.ilike(like),
+                    models.Video.description.ilike(like),
+                )
+            )
+            .all()
+        )
 
     if not video_ids:
         return []
