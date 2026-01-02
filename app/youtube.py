@@ -107,6 +107,29 @@ def search_playlists(term: str):
             suggestions.append({"id": playlist_id, "title": title})
     return suggestions
 
+
+def extract_channel_identifier(value: str):
+    """
+    Try to extract a UC... channel id from a URL/handle.
+    Returns (channel_id, search_term).
+    """
+    val = value.strip()
+    if val.startswith("UC"):
+        return val, None
+    lowered = val.lower()
+    if "youtube.com/channel/" in lowered:
+        parts = val.split("/channel/")
+        if len(parts) > 1:
+            cid = parts[1].split("/")[0]
+            if cid.startswith("UC"):
+                return cid, None
+    if "youtube.com/@".lower() in lowered:
+        # handle; use as search term
+        handle = val.split("@", 1)[1]
+        return None, handle
+    # fallback: treat input as search term
+    return None, val
+
 def get_channel_playlists(channel_id: str):
     youtube = get_youtube_service()
     playlists = []

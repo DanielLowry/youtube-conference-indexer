@@ -97,7 +97,74 @@ async def create_source_from_form(
     external_id: str = Form(...)
 ):
     try:
-        source = schemas.SourceCreate(name=name, type=type, external_id=external_id)
+        external_id_input = external_id.strip()
+        channel_suggestions = []
+        channel_id = external_id_input
+        if type == "channel":
+            channel_id, search_term = youtube.extract_channel_identifier(external_id_input)
+            if not channel_id:
+                if not youtube.has_valid_key():
+                    sources = crud.get_sources(db)
+                    return templates.TemplateResponse(
+                        "sources.html",
+                        {
+                            "request": request,
+                            "sources": sources,
+                            "error_message": "You need a valid YouTube API key to look up channel names. Add one on the API Key page, then retry.",
+                        },
+                        status_code=400,
+                    )
+                try:
+                    channel_suggestions = youtube.search_channels(search_term or external_id_input)
+                except Exception as exc:  # noqa: BLE001
+                    logging.exception("Channel lookup failed")
+                    channel_suggestions = []
+                if not channel_suggestions:
+                    sources = crud.get_sources(db)
+                    return templates.TemplateResponse(
+                        "sources.html",
+                        {
+                            "request": request,
+                            "sources": sources,
+                            "error_message": f"Could not find a channel for '{external_id_input}'. Try a full channel URL or a different name.",
+                        },
+                        status_code=400,
+                    )
+                # Auto-pick if a clear match exists
+                normalized_term = (search_term or external_id_input).strip().lstrip("@").lower()
+                auto_pick = None
+                if len(channel_suggestions) == 1:
+                    auto_pick = channel_suggestions[0]
+                else:
+                    for cand in channel_suggestions:
+                        title_norm = (cand.get("title") or "").lower()
+                        if normalized_term == title_norm:
+                            auto_pick = cand
+                            break
+                    if not auto_pick:
+                        for cand in channel_suggestions:
+                            title_norm = (cand.get("title") or "").lower()
+                            if normalized_term in title_norm:
+                                auto_pick = cand
+                                break
+                if auto_pick:
+                    channel_id = auto_pick["id"]
+                    # keep user-provided name; ID becomes the canonical external_id
+                else:
+                    sources = crud.get_sources(db)
+                    return templates.TemplateResponse(
+                        "sources.html",
+                        {
+                            "request": request,
+                            "sources": sources,
+                            "channel_suggestions": channel_suggestions,
+                            "suggestions_term": external_id_input,
+                            "error_message": f"Select the channel for '{external_id_input}' before adding.",
+                        },
+                        status_code=200,
+                    )
+
+        source = schemas.SourceCreate(name=name, type=type, external_id=channel_id)
         created_source = crud.create_source(db=db, source=source)
 
         # For playlist-type sources, create a playlist record immediately so it appears in the UI
@@ -139,6 +206,11 @@ async def discover_playlists(
         raise HTTPException(status_code=404, detail="Source not found")
 
     if source.type == "channel":
+        if not youtube.has_valid_key():
+            return HTMLResponse(
+                '<li class="p-3 rounded bg-red-100 text-red-800 border border-red-300">No valid YouTube API key configured. Set one on the API Key page.</li>',
+                status_code=200,
+            )
         try:
             playlists_data = youtube.get_channel_playlists(source.external_id)
             for item in playlists_data:
