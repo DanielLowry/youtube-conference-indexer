@@ -13,6 +13,8 @@ app = FastAPI()
 
 templates = Jinja2Templates(directory="templates")
 
+sync_error_message = None
+
 
 # Dependency
 def get_db():
@@ -26,10 +28,16 @@ def get_db():
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     db_state = database.get_db_state()
+    api_key_valid = youtube.has_valid_key()
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"request": request, "db_state": db_state},
+        {
+            "request": request,
+            "db_state": db_state,
+            "sync_error_message": sync_error_message,
+            "api_key_valid": api_key_valid,
+        },
     )
 
 
@@ -77,17 +85,24 @@ async def discover_playlists(
         raise HTTPException(status_code=404, detail="Source not found")
 
     if source.type == "channel":
-        playlists_data = youtube.get_channel_playlists(source.external_id)
-        for item in playlists_data:
-            playlist_id = item["id"]
-            existing_playlist = crud.get_playlist_by_external_id(db, external_id=playlist_id)
-            if not existing_playlist:
-                playlist = schemas.PlaylistCreate(
-                    external_id=playlist_id,
-                    title=item["snippet"]["title"],
-                    description=item["snippet"]["description"],
-                )
-                crud.create_playlist(db, playlist=playlist, source_id=source_id)
+        try:
+            playlists_data = youtube.get_channel_playlists(source.external_id)
+            for item in playlists_data:
+                playlist_id = item["id"]
+                existing_playlist = crud.get_playlist_by_external_id(db, external_id=playlist_id)
+                if not existing_playlist:
+                    playlist = schemas.PlaylistCreate(
+                        external_id=playlist_id,
+                        title=item["snippet"]["title"],
+                        description=item["snippet"]["description"],
+                    )
+                    crud.create_playlist(db, playlist=playlist, source_id=source_id)
+        except Exception as exc:  # noqa: BLE001
+            logging.exception("Discover playlists failed")
+            return HTMLResponse(
+                f'<div class="p-3 rounded bg-red-100 text-red-800">Error discovering playlists: {exc}</div>',
+                status_code=500,
+            )
 
     db.refresh(source)
     return templates.TemplateResponse(
@@ -109,6 +124,7 @@ def _sync_playlist_videos(playlist_id: int):
     """Background job to sync a single playlist."""
     db = database.SessionLocal()
     try:
+        global sync_error_message
         playlist = crud.get_playlist(db, playlist_id=playlist_id)
         if not playlist:
             return
@@ -137,13 +153,25 @@ def _sync_playlist_videos(playlist_id: int):
         logging.info("Synced %s new videos for playlist %s", new_count, playlist.external_id)
     except Exception:
         logging.exception("Sync failed for playlist_id=%s", playlist_id)
+        sync_error_message = "Sync failed; check API key/network. See logs for details."
     finally:
         db.close()
 
 
 @app.post("/sync/run", response_class=HTMLResponse)
 async def run_sync(background_tasks: BackgroundTasks, request: Request, db: Session = Depends(get_db)):
+    global sync_error_message
+    sync_error_message = None
     pinned_playlists = crud.get_pinned_playlists(db)
+    if not pinned_playlists:
+        return HTMLResponse(
+            """
+            <div id="sync-status" class="text-yellow-700 bg-yellow-100 p-2 rounded">
+                No pinned playlists to sync.
+            </div>
+            """,
+            status_code=200,
+        )
     for playlist in pinned_playlists:
         background_tasks.add_task(_sync_playlist_videos, playlist.id)
 
@@ -238,6 +266,21 @@ async def remove_video_tag(
     return templates.TemplateResponse(
         request, "video-item.html", {"request": request, "video": video}
     )
+
+
+@app.get("/api-key", response_class=HTMLResponse)
+async def api_key_form(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "api-key.html",
+        {"request": request, "api_key_valid": youtube.has_valid_key()},
+    )
+
+
+@app.post("/api-key", response_class=RedirectResponse)
+async def set_api_key(key: str = Form(...)):
+    youtube.set_api_key(key.strip())
+    return RedirectResponse(url="/", status_code=303)
 
 
 @app.get("/search", response_class=HTMLResponse)

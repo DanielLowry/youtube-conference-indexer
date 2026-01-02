@@ -1,9 +1,42 @@
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 import isodate
 from .config import settings
 
+_current_api_key = settings.youtube_api_key
+
+
+def set_api_key(key: str):
+    global _current_api_key
+    _current_api_key = key
+    return _current_api_key
+
+
+def get_api_key():
+    return _current_api_key
+
+
+def has_valid_key():
+    try:
+        _validate_api_key()
+        return True
+    except RuntimeError:
+        return False
+
+
+def _validate_api_key():
+    key = _current_api_key
+    if not key or "your_api_key_here" in key:
+        raise RuntimeError("YouTube API key is missing or invalid. Set YOUTUBE_API_KEY in .env.")
+    return key
+
+
 def get_youtube_service():
-    return build('youtube', 'v3', developerKey=settings.youtube_api_key)
+    key = _validate_api_key()
+    try:
+        return build('youtube', 'v3', developerKey=key)
+    except HttpError as exc:
+        raise RuntimeError(f"YouTube API error: {exc}") from exc
 
 def get_channel_playlists(channel_id: str):
     youtube = get_youtube_service()

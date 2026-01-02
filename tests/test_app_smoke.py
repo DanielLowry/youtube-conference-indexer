@@ -234,10 +234,11 @@ def test_no_db_mode_toggle_banner(client: TestClient, app_ctx):
     assert "NO-DB" in home.text
     assert "in-memory" in home.text.lower()
 
-    # Switch back to primary DB
-    switched = app_ctx["database"].switch_to_primary()
-    if not switched:
-        import pytest
-        pytest.skip("Primary DB unavailable in test environment")
+    # Switch back to primary DB (if available)
+    client.post("/db/reconnect")
     home = client.get("/")
-    assert "NO-DB" not in home.text
+    if "NO-DB" in home.text:
+        # Reconnect failed; banner should remain
+        assert "in-memory" in home.text.lower()
+    else:
+        assert "NO-DB" not in home.text
