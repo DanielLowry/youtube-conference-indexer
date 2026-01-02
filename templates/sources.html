@@ -3,6 +3,16 @@
 {% block content %}
 <h1 class="text-2xl font-bold mb-4">Sources</h1>
 
+<div class="mb-4 p-4 bg-white rounded shadow text-sm text-gray-800">
+    <p class="font-semibold mb-1">How sources work</p>
+    <ul class="list-disc list-inside space-y-1">
+        <li>Add a channel (name/handle/URL ok) or a playlist ID/URL.</li>
+        <li>For channels, click <span class="font-semibold">Discover Playlists</span> then pin the playlists you want.</li>
+        <li>Pinned playlists are synced from the Home page via “Sync Pinned Playlists”.</li>
+        <li>If a channel name is ambiguous, pick from the suggestions shown.</li>
+    </ul>
+</div>
+
 {% if error_message %}
 <div class="mb-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">
     {{ error_message }}
