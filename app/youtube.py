@@ -4,11 +4,15 @@ import isodate
 from .config import settings
 
 _current_api_key = settings.youtube_api_key
+_last_validation_ok: bool | None = None
+_last_validation_message: str | None = None
 
 
 def set_api_key(key: str):
-    global _current_api_key
+    global _current_api_key, _last_validation_ok, _last_validation_message
     _current_api_key = key
+    _last_validation_ok = None
+    _last_validation_message = None
     return _current_api_key
 
 
@@ -17,8 +21,12 @@ def get_api_key():
 
 
 def has_valid_key():
+    if _last_validation_ok is False:
+        return False
     try:
         _validate_api_key()
+        if _last_validation_ok is True:
+            return True
         return True
     except RuntimeError:
         return False
@@ -37,6 +45,29 @@ def get_youtube_service():
         return build('youtube', 'v3', developerKey=key)
     except HttpError as exc:
         raise RuntimeError(f"YouTube API error: {exc}") from exc
+
+
+def validate_api_key():
+    """
+    Make a lightweight call to verify the key.
+    Uses Google Developers channel playlists as a cheap probe.
+    """
+    global _last_validation_ok, _last_validation_message
+    try:
+        yt = get_youtube_service()
+        req = yt.playlists().list(part="id", channelId="UC_x5XG1OV2P6uZZ5FSM9Ttw", maxResults=1)
+        req.execute()
+        _last_validation_ok = True
+        _last_validation_message = "API key validated successfully."
+        return True, _last_validation_message
+    except Exception as exc:  # noqa: BLE001
+        _last_validation_ok = False
+        _last_validation_message = f"API key validation failed: {exc}"
+        return False, _last_validation_message
+
+
+def get_last_validation():
+    return _last_validation_ok, _last_validation_message
 
 def get_channel_playlists(channel_id: str):
     youtube = get_youtube_service()

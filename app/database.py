@@ -71,6 +71,7 @@ def create_tables():
     from . import models  # noqa: WPS433
 
     models.Base.metadata.create_all(bind=engine)
+    ensure_fts()
 
 
 def health_check():
@@ -81,9 +82,55 @@ def health_check():
         # check a core table exists
         with engine.connect() as conn:
             conn.execute(text("SELECT 1 FROM videos LIMIT 1"))
+            conn.execute(text("SELECT 1 FROM videos_fts LIMIT 1"))
         return True, ""
     except Exception as exc:  # noqa: BLE001
         return False, str(exc)
+
+
+def ensure_fts():
+    """Ensure FTS virtual table and triggers exist."""
+    sql_statements = [
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS videos_fts USING fts5(
+            title,
+            description,
+            content='videos',
+            content_rowid='id'
+        );
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS videos_ai AFTER INSERT ON videos BEGIN
+            INSERT INTO videos_fts(rowid, title, description)
+            VALUES (new.id, new.title, new.description);
+        END;
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS videos_ad AFTER DELETE ON videos BEGIN
+            INSERT INTO videos_fts(videos_fts, rowid, title, description)
+            VALUES ('delete', old.id, old.title, old.description);
+        END;
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS videos_au AFTER UPDATE ON videos BEGIN
+            INSERT INTO videos_fts(videos_fts, rowid, title, description)
+            VALUES ('delete', old.id, old.title, old.description);
+            INSERT INTO videos_fts(rowid, title, description)
+            VALUES (new.id, new.title, new.description);
+        END;
+        """,
+    ]
+    with engine.begin() as conn:
+        for stmt in sql_statements:
+            conn.exec_driver_sql(stmt)
+        # backfill existing rows if empty
+        conn.exec_driver_sql(
+            """
+            INSERT INTO videos_fts (rowid, title, description)
+            SELECT id, title, description FROM videos
+            WHERE id NOT IN (SELECT rowid FROM videos_fts);
+            """
+        )
 
 
 # Initialize on import

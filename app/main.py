@@ -18,6 +18,8 @@ database.create_tables()
 db_health_ok, db_health_error = database.health_check()
 
 sync_error_message = None
+api_key_status_message = None
+api_key_validation_ok = None
 
 
 # Dependency
@@ -27,6 +29,20 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@app.on_event("startup")
+async def validate_initial_api_key():
+    """Validate any configured API key once at startup."""
+    global api_key_status_message, api_key_validation_ok
+    key = youtube.get_api_key()
+    if not key or "your_api_key_here" in key:
+        return
+    ok, message = youtube.validate_api_key()
+    api_key_status_message = message
+    api_key_validation_ok = ok
+    if not ok:
+        logging.warning("API key validation failed on startup: %s", message)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -43,6 +59,8 @@ async def read_root(request: Request):
             "api_key_valid": api_key_valid,
             "db_health_ok": db_health_ok,
             "db_health_error": db_health_error,
+            "api_key_status_message": api_key_status_message,
+            "api_key_validation_ok": api_key_validation_ok,
         },
     )
 
@@ -279,13 +297,34 @@ async def api_key_form(request: Request):
     return templates.TemplateResponse(
         request,
         "api-key.html",
-        {"request": request, "api_key_valid": youtube.has_valid_key()},
+        {
+            "request": request,
+            "api_key_valid": youtube.has_valid_key(),
+            "api_key_status_message": api_key_status_message,
+            "api_key_validation_ok": api_key_validation_ok,
+        },
     )
 
 
-@app.post("/api-key", response_class=RedirectResponse)
-async def set_api_key(key: str = Form(...)):
+@app.post("/api-key", response_class=HTMLResponse)
+async def set_api_key(request: Request, key: str = Form(...)):
+    global api_key_status_message, api_key_validation_ok
     youtube.set_api_key(key.strip())
+    ok, message = youtube.validate_api_key()
+    api_key_status_message = message
+    api_key_validation_ok = ok
+    if not ok:
+        return templates.TemplateResponse(
+            request,
+            "api-key.html",
+            {
+                "request": request,
+                "api_key_valid": False,
+                "api_key_status_message": message,
+                "api_key_validation_ok": ok,
+            },
+            status_code=400,
+        )
     return RedirectResponse(url="/", status_code=303)
 
 

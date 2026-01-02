@@ -33,6 +33,10 @@ def app_ctx(tmp_path: Path, monkeypatch):
     database.create_tables()
 
     from app import main as main_module  # noqa: WPS433 (import inside fixture)
+    # Stub validation to avoid network during tests; individual tests can override
+    monkeypatch.setattr(main_module.youtube, "validate_api_key", lambda: (True, "Validation skipped in tests"))
+    monkeypatch.setattr(main_module, "api_key_status_message", "Validation skipped in tests")
+    monkeypatch.setattr(main_module, "api_key_validation_ok", True)
     from app import models  # noqa: WPS433
     from app.config import settings  # noqa: WPS433
 

@@ -21,6 +21,14 @@
     Running in NO-DB (in-memory) mode. Nothing will persist across restarts.
 </div>
 {% endif %}
+{% if api_key_status_message %}
+<div class="mt-4 p-4 rounded {{ 'bg-green-100 text-green-800 border border-green-300' if api_key_validation_ok else 'bg-red-100 text-red-800 border border-red-300' }}">
+    API key status: {{ api_key_status_message }}
+    {% if not api_key_validation_ok %}
+        <span class="ml-2">Provide a new key on the <a href="/api-key" class="underline font-semibold">API Key page</a>.</span>
+    {% endif %}
+</div>
+{% endif %}
 {% if not api_key_valid %}
 <div class="mt-4 p-4 rounded bg-red-100 text-red-800 border border-red-300">
     No valid YouTube API key configured. Provide one on the <a href="/api-key" class="underline font-semibold">API Key page</a>.
