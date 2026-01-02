@@ -16,7 +16,7 @@
     <p class="mt-2 text-sm text-gray-700">Tip: If you see no search results or empty exports, ensure playlists are pinned and a sync has completed.</p>
 </div>
 
-<div id="sync-status" class="text-sm text-gray-700 mb-2">
+<div id="sync-status" class="text-sm text-gray-700 mb-2" hx-get="/sync/status" hx-trigger="load, every 3s" hx-swap="innerHTML">
     Sync runs automatically every ~{{ AUTO_SYNC_INTERVAL_MINUTES }} minutes and before exports.
 </div>
 

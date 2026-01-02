@@ -24,6 +24,12 @@ AUTO_SYNC_INTERVAL_MINUTES = 30
 last_auto_sync_at = None
 sync_in_progress = False
 active_sync_jobs = 0
+total_sync_jobs = 0
+last_sync_started_at = None
+last_sync_completed_at = None
+sync_message = ""
+sync_steps_done = 0
+sync_steps_total = 0
 
 
 # Dependency
@@ -56,7 +62,7 @@ def queue_auto_sync(background_tasks: BackgroundTasks):
     """Schedule a sync if enough time has passed and not already running."""
     from datetime import timedelta
 
-    global last_auto_sync_at, sync_in_progress, active_sync_jobs, sync_error_message
+    global last_auto_sync_at, sync_in_progress, active_sync_jobs, total_sync_jobs, sync_error_message, last_sync_started_at, sync_message, sync_steps_done, sync_steps_total
     now = datetime.datetime.utcnow()
     if sync_in_progress:
         return
@@ -68,10 +74,20 @@ def queue_auto_sync(background_tasks: BackgroundTasks):
         pinned_playlists = crud.get_pinned_playlists(db)
         if not pinned_playlists:
             last_auto_sync_at = now
+            last_sync_started_at = now
+            last_sync_completed_at = now
+            sync_message = "No pinned playlists to sync."
+            sync_steps_done = 0
+            sync_steps_total = 0
             return
         sync_error_message = None
         sync_in_progress = True
         active_sync_jobs = len(pinned_playlists)
+        total_sync_jobs = len(pinned_playlists)
+        last_sync_started_at = now
+        sync_message = "Sync started."
+        sync_steps_done = 0
+        sync_steps_total = len(pinned_playlists)
         last_auto_sync_at = now
         for playlist in pinned_playlists:
             background_tasks.add_task(_sync_playlist_videos, playlist.id)
@@ -81,21 +97,37 @@ def queue_auto_sync(background_tasks: BackgroundTasks):
 
 def sync_pinned_now():
     """Force a sync of all pinned playlists (used before exports)."""
-    global sync_error_message, sync_in_progress, active_sync_jobs, last_auto_sync_at
+    global sync_error_message, sync_in_progress, active_sync_jobs, total_sync_jobs, last_auto_sync_at, last_sync_started_at, last_sync_completed_at, sync_message, sync_steps_done, sync_steps_total
     db = database.SessionLocal()
     try:
         pinned_playlists = crud.get_pinned_playlists(db)
         if not pinned_playlists:
+            now = datetime.datetime.utcnow()
+            last_sync_started_at = now
+            last_sync_completed_at = now
+            sync_in_progress = False
+            active_sync_jobs = 0
+            total_sync_jobs = 0
+            sync_message = "No pinned playlists to sync."
+            sync_steps_done = 0
+            sync_steps_total = 0
             return
         sync_error_message = None
         sync_in_progress = True
         active_sync_jobs = len(pinned_playlists)
+        total_sync_jobs = len(pinned_playlists)
+        last_sync_started_at = datetime.datetime.utcnow()
+        sync_message = "Sync started."
+        sync_steps_done = 0
+        sync_steps_total = len(pinned_playlists)
         for playlist in pinned_playlists:
             _sync_playlist_videos(playlist.id)
         last_auto_sync_at = datetime.datetime.utcnow()
     finally:
         sync_in_progress = False
         active_sync_jobs = 0
+        last_sync_completed_at = datetime.datetime.utcnow()
+        sync_message = "Sync completed."
         db.close()
 
 
@@ -113,6 +145,14 @@ def _home_context(db: Session):
         "api_key_validation_ok": api_key_validation_ok,
         "AUTO_SYNC_INTERVAL_MINUTES": AUTO_SYNC_INTERVAL_MINUTES,
         "sources": sources,
+        "sync_in_progress": sync_in_progress,
+        "active_sync_jobs": active_sync_jobs,
+        "total_sync_jobs": total_sync_jobs,
+        "last_sync_started_at": last_sync_started_at,
+        "last_sync_completed_at": last_sync_completed_at,
+        "sync_message": sync_message,
+        "sync_steps_done": sync_steps_done,
+        "sync_steps_total": sync_steps_total,
     }
 
 
@@ -136,6 +176,36 @@ async def read_root(request: Request, background_tasks: BackgroundTasks, db: Ses
     ctx = _home_context(db)
     ctx["request"] = request
     return templates.TemplateResponse(request, "index.html", ctx)
+
+
+@app.get("/sync/status", response_class=HTMLResponse)
+async def sync_status(request: Request):
+    percent = 0
+    completed = 0
+    total_steps = sync_steps_total or total_sync_jobs or 0
+    done_steps = sync_steps_done or 0
+    if total_steps:
+        completed = min(done_steps, total_steps)
+        percent = int((completed / total_steps) * 100)
+    status_text = ""
+    if sync_in_progress:
+        if total_steps:
+            status_text = f"Sync in progress: {percent}% ({completed}/{total_steps} steps)"
+        else:
+            status_text = "Sync in progress..."
+    elif last_sync_completed_at:
+        status_text = f"Last sync completed at {last_sync_completed_at} UTC"
+    elif last_sync_started_at:
+        status_text = sync_message or "Sync attempted but nothing to do (no pinned playlists)."
+    else:
+        status_text = "No sync has run yet."
+    bar = f"""
+    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+        <div class="bg-green-500 h-3" style="width: {percent}%"></div>
+    </div>
+    <div class="text-xs text-gray-700 mt-1">{status_text}</div>
+    """
+    return HTMLResponse(bar)
 
 
 @app.get("/sources", response_class=HTMLResponse)
@@ -339,17 +409,20 @@ def _sync_playlist_videos(playlist_id: int):
     """Background job to sync a single playlist."""
     db = database.SessionLocal()
     try:
-        global sync_error_message, active_sync_jobs, sync_in_progress
+        global sync_error_message, active_sync_jobs, sync_in_progress, last_sync_completed_at, sync_message, sync_steps_done, sync_steps_total
         playlist = crud.get_playlist(db, playlist_id=playlist_id)
         if not playlist:
             return
 
         videos_data = youtube.get_videos_for_playlist(playlist.external_id)
+        # include per-video steps for progress
+        sync_steps_total += len(videos_data)
         new_count = 0
         for item in videos_data:
             video_id = item["id"]
             existing_video = crud.get_video_by_external_id(db, external_id=video_id)
             if existing_video:
+                sync_steps_done += 1
                 continue
             video = schemas.VideoCreate(
                 external_id=video_id,
@@ -363,6 +436,7 @@ def _sync_playlist_videos(playlist_id: int):
             )
             crud.create_video(db, video=video, playlist_id=playlist.id)
             new_count += 1
+            sync_steps_done += 1
         playlist.last_synced_at = datetime.datetime.utcnow()
         db.commit()
         logging.info("Synced %s new videos for playlist %s", new_count, playlist.external_id)
@@ -377,12 +451,17 @@ def _sync_playlist_videos(playlist_id: int):
         except Exception:
             suggestion_text = ""
         sync_error_message = f"Sync failed; check API key/network. Details: {exc}.{suggestion_text}"
+        sync_message = sync_error_message
     finally:
         db.close()
+        # mark playlist-level step complete
+        sync_steps_done += 1
         if active_sync_jobs > 0:
             active_sync_jobs -= 1
             if active_sync_jobs == 0:
                 sync_in_progress = False
+                last_sync_completed_at = datetime.datetime.utcnow()
+                sync_message = "Sync completed."
 
 
 @app.post("/sync/run", response_class=HTMLResponse)
