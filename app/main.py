@@ -31,6 +31,23 @@ def get_db():
         db.close()
 
 
+def _inline_error(message: str, status_code: int = 200) -> HTMLResponse:
+    return HTMLResponse(
+        f'<div class="p-3 rounded bg-red-100 text-red-800 border border-red-300">{message}</div>',
+        status_code=status_code,
+    )
+
+
+def _page_error(request: Request, message: str, status_code: int = 500) -> HTMLResponse:
+    content = _inline_error(message, status_code=status_code).body.decode()
+    return templates.TemplateResponse(
+        request,
+        "base.html",
+        {"request": request, "content": content},
+        status_code=status_code,
+    )
+
+
 @app.on_event("startup")
 async def validate_initial_api_key():
     """Validate any configured API key once at startup."""
@@ -73,26 +90,39 @@ async def read_sources(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/sources", response_class=RedirectResponse)
 async def create_source_from_form(
+    request: Request,
     db: Session = Depends(get_db),
     name: str = Form(...),
     type: str = Form(...),
     external_id: str = Form(...)
 ):
-    source = schemas.SourceCreate(name=name, type=type, external_id=external_id)
-    created_source = crud.create_source(db=db, source=source)
+    try:
+        source = schemas.SourceCreate(name=name, type=type, external_id=external_id)
+        created_source = crud.create_source(db=db, source=source)
 
-    # For playlist-type sources, create a playlist record immediately so it appears in the UI
-    if type == "playlist":
-        existing = crud.get_playlist_by_external_id(db, external_id=external_id)
-        if not existing:
-            playlist = schemas.PlaylistCreate(
-                external_id=external_id,
-                title=name,
-                description=None,
-            )
-            crud.create_playlist(db, playlist=playlist, source_id=created_source.id)
-
-    return RedirectResponse(url="/sources", status_code=303)
+        # For playlist-type sources, create a playlist record immediately so it appears in the UI
+        if type == "playlist":
+            existing = crud.get_playlist_by_external_id(db, external_id=external_id)
+            if not existing:
+                playlist = schemas.PlaylistCreate(
+                    external_id=external_id,
+                    title=name,
+                    description=None,
+                )
+                crud.create_playlist(db, playlist=playlist, source_id=created_source.id)
+        return RedirectResponse(url="/sources", status_code=303)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Create source failed")
+        sources = crud.get_sources(db)
+        return templates.TemplateResponse(
+            "sources.html",
+            {
+                "request": request,
+                "sources": sources,
+                "error_message": f"Could not create source: {exc}",
+            },
+            status_code=400,
+        )
 
 
 @app.delete("/sources/{source_id}", status_code=204)
@@ -123,9 +153,21 @@ async def discover_playlists(
                     crud.create_playlist(db, playlist=playlist, source_id=source_id)
         except Exception as exc:  # noqa: BLE001
             logging.exception("Discover playlists failed")
+            suggestions = []
+            try:
+                suggestions = youtube.search_channels(source.external_id)
+            except Exception:
+                suggestions = []
+            suggestion_html = ""
+            if suggestions:
+                suggestion_items = "".join(
+                    f'<li class="ml-4 list-disc"><strong>{item["title"]}</strong> (ID: {item["id"]})</li>'
+                    for item in suggestions
+                )
+                suggestion_html = f"<div class='mt-2 text-sm'>Did you mean one of these channels?<ul class='list-disc list-inside'>{suggestion_items}</ul></div>"
             return HTMLResponse(
-                f'<div class="p-3 rounded bg-red-100 text-red-800">Error discovering playlists: {exc}</div>',
-                status_code=500,
+                f'<li class="p-3 rounded bg-red-100 text-red-800 border border-red-300">Error discovering playlists: {exc}{suggestion_html}</li>',
+                status_code=200,
             )
 
     db.refresh(source)
@@ -138,10 +180,14 @@ async def discover_playlists(
 async def toggle_pin_playlist(
     playlist_id: int, request: Request, db: Session = Depends(get_db)
 ):
-    playlist = crud.toggle_playlist_pinned(db, playlist_id=playlist_id)
-    return templates.TemplateResponse(
-        request, "playlist-item.html", {"request": request, "playlist": playlist}
-    )
+    try:
+        playlist = crud.toggle_playlist_pinned(db, playlist_id=playlist_id)
+        return templates.TemplateResponse(
+            request, "playlist-item.html", {"request": request, "playlist": playlist}
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Pin/unpin failed")
+        return _inline_error(f"Could not update pin: {exc}")
 
 
 def _sync_playlist_videos(playlist_id: int):
@@ -175,9 +221,17 @@ def _sync_playlist_videos(playlist_id: int):
         playlist.last_synced_at = datetime.datetime.utcnow()
         db.commit()
         logging.info("Synced %s new videos for playlist %s", new_count, playlist.external_id)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
         logging.exception("Sync failed for playlist_id=%s", playlist_id)
-        sync_error_message = "Sync failed; check API key/network. See logs for details."
+        suggestion_text = ""
+        try:
+            suggestions = youtube.search_playlists(playlist.external_id)
+            if suggestions:
+                human = "; ".join(f'{s["title"]} (ID: {s["id"]})' for s in suggestions)
+                suggestion_text = f" Possible playlists: {human}"
+        except Exception:
+            suggestion_text = ""
+        sync_error_message = f"Sync failed; check API key/network. Details: {exc}.{suggestion_text}"
     finally:
         db.close()
 
@@ -215,12 +269,16 @@ async def update_video_status(
     score: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
-    state = schemas.VideoStateCreate(status=status, notes=notes, score=score)
-    crud.update_video_state(db, video_id=video_id, state=state)
-    video = crud.get_video(db, video_id=video_id)
-    return templates.TemplateResponse(
-        request, "video-item.html", {"request": request, "video": video}
-    )
+    try:
+        state = schemas.VideoStateCreate(status=status, notes=notes, score=score)
+        crud.update_video_state(db, video_id=video_id, state=state)
+        video = crud.get_video(db, video_id=video_id)
+        return templates.TemplateResponse(
+            request, "video-item.html", {"request": request, "video": video}
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Update status failed")
+        return _inline_error(f"Could not update status: {exc}")
 
 
 @app.post("/videos/{video_id}/tags", response_class=HTMLResponse)
@@ -230,12 +288,16 @@ async def add_video_tag(
     tag: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    video = crud.add_tag_to_video(db, video_id=video_id, tag_name=tag.strip())
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found")
-    return templates.TemplateResponse(
-        request, "video-item.html", {"request": request, "video": video}
-    )
+    try:
+        video = crud.add_tag_to_video(db, video_id=video_id, tag_name=tag.strip())
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        return templates.TemplateResponse(
+            request, "video-item.html", {"request": request, "video": video}
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Add tag failed")
+        return _inline_error(f"Could not add tag: {exc}")
 
 
 def _export_videos_content(db: Session, fmt: str, status: Optional[str]):
@@ -257,12 +319,20 @@ def _export_videos_content(db: Session, fmt: str, status: Optional[str]):
 
 @app.get("/export/markdown")
 async def export_markdown(status: Optional[str] = None, db: Session = Depends(get_db)):
-    return _export_videos_content(db, fmt="markdown", status=status)
+    try:
+        return _export_videos_content(db, fmt="markdown", status=status)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Export markdown failed")
+        return _inline_error(f"Export failed: {exc}", status_code=500)
 
 
 @app.get("/export/csv")
 async def export_csv(status: Optional[str] = None, db: Session = Depends(get_db)):
-    return _export_videos_content(db, fmt="csv", status=status)
+    try:
+        return _export_videos_content(db, fmt="csv", status=status)
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Export CSV failed")
+        return _inline_error(f"Export failed: {exc}", status_code=500)
 
 
 @app.post("/db/use-memory", response_class=RedirectResponse)
@@ -284,12 +354,16 @@ async def remove_video_tag(
     tag: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    video = crud.remove_tag_from_video(db, video_id=video_id, tag_name=tag.strip())
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found")
-    return templates.TemplateResponse(
-        request, "video-item.html", {"request": request, "video": video}
-    )
+    try:
+        video = crud.remove_tag_from_video(db, video_id=video_id, tag_name=tag.strip())
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        return templates.TemplateResponse(
+            request, "video-item.html", {"request": request, "video": video}
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Remove tag failed")
+        return _inline_error(f"Could not remove tag: {exc}")
 
 
 @app.get("/api-key", response_class=HTMLResponse)
@@ -338,7 +412,7 @@ async def search_videos_page(
         logging.exception("Search failed")
         error_fragment = f'<div class="p-3 rounded bg-red-100 text-red-800 border border-red-300">Search failed: {exc}</div>'
         if "hx-request" in request.headers:
-            return HTMLResponse(error_fragment, status_code=500)
+            return HTMLResponse(error_fragment, status_code=200)
         return HTMLResponse(
             templates.get_template("base.html").render(
                 request=request, content=error_fragment

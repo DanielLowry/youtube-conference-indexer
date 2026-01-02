@@ -12,6 +12,12 @@
 </form>
 
 <div id="search-results">
-    {% include "video-list.html" %}
+    {% if videos %}
+        {% include "video-list.html" %}
+    {% else %}
+        <div class="p-3 rounded bg-yellow-50 text-yellow-800 border border-yellow-200">
+            No results yet. Make sure you have pinned playlists and run a sync, or refine your search.
+        </div>
+    {% endif %}
 </div>
 {% endblock %}

@@ -69,6 +69,44 @@ def validate_api_key():
 def get_last_validation():
     return _last_validation_ok, _last_validation_message
 
+
+def search_channels(term: str):
+    """Find channel suggestions for a loose term (used when a channel id is wrong)."""
+    yt = get_youtube_service()
+    request = yt.search().list(
+        part="snippet",
+        q=term,
+        type="channel",
+        maxResults=5,
+    )
+    response = request.execute()
+    suggestions = []
+    for item in response.get("items", []):
+        channel_id = item["id"].get("channelId")
+        title = item["snippet"].get("title")
+        if channel_id:
+            suggestions.append({"id": channel_id, "title": title})
+    return suggestions
+
+
+def search_playlists(term: str):
+    """Find playlist suggestions for a loose term (used when a playlist id/name is wrong)."""
+    yt = get_youtube_service()
+    request = yt.search().list(
+        part="snippet",
+        q=term,
+        type="playlist",
+        maxResults=5,
+    )
+    response = request.execute()
+    suggestions = []
+    for item in response.get("items", []):
+        playlist_id = item["id"].get("playlistId")
+        title = item["snippet"].get("title")
+        if playlist_id:
+            suggestions.append({"id": playlist_id, "title": title})
+    return suggestions
+
 def get_channel_playlists(channel_id: str):
     youtube = get_youtube_service()
     playlists = []

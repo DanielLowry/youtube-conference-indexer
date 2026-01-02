@@ -3,6 +3,12 @@
 {% block content %}
 <h1 class="text-2xl font-bold mb-4">Sources</h1>
 
+{% if error_message %}
+<div class="mb-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">
+    {{ error_message }}
+</div>
+{% endif %}
+
 <div class="mb-4">
     <form action="/sources" method="post" class="bg-white p-4 rounded shadow-md">
         <h2 class="text-xl font-bold mb-2">Add New Source</h2>
