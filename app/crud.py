@@ -125,6 +125,13 @@ def toggle_playlist_pinned(db: Session, playlist_id: int):
     return db_playlist
 
 
+def set_all_playlists_pinned(db: Session, source_id: int, pinned: bool):
+    db.query(models.Playlist).filter(models.Playlist.source_id == source_id).update(
+        {"pinned": pinned}, synchronize_session=False
+    )
+    db.commit()
+
+
 def get_videos(db: Session, status: str | None = None):
     query = db.query(models.Video)
     if status:

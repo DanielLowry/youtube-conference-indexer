@@ -20,6 +20,10 @@ db_health_ok, db_health_error = database.health_check()
 sync_error_message = None
 api_key_status_message = None
 api_key_validation_ok = None
+AUTO_SYNC_INTERVAL_MINUTES = 30
+last_auto_sync_at = None
+sync_in_progress = False
+active_sync_jobs = 0
 
 
 # Dependency
@@ -48,6 +52,70 @@ def _page_error(request: Request, message: str, status_code: int = 500) -> HTMLR
     )
 
 
+def queue_auto_sync(background_tasks: BackgroundTasks):
+    """Schedule a sync if enough time has passed and not already running."""
+    from datetime import timedelta
+
+    global last_auto_sync_at, sync_in_progress, active_sync_jobs, sync_error_message
+    now = datetime.datetime.utcnow()
+    if sync_in_progress:
+        return
+    if last_auto_sync_at and now - last_auto_sync_at < timedelta(minutes=AUTO_SYNC_INTERVAL_MINUTES):
+        return
+
+    db = database.SessionLocal()
+    try:
+        pinned_playlists = crud.get_pinned_playlists(db)
+        if not pinned_playlists:
+            last_auto_sync_at = now
+            return
+        sync_error_message = None
+        sync_in_progress = True
+        active_sync_jobs = len(pinned_playlists)
+        last_auto_sync_at = now
+        for playlist in pinned_playlists:
+            background_tasks.add_task(_sync_playlist_videos, playlist.id)
+    finally:
+        db.close()
+
+
+def sync_pinned_now():
+    """Force a sync of all pinned playlists (used before exports)."""
+    global sync_error_message, sync_in_progress, active_sync_jobs, last_auto_sync_at
+    db = database.SessionLocal()
+    try:
+        pinned_playlists = crud.get_pinned_playlists(db)
+        if not pinned_playlists:
+            return
+        sync_error_message = None
+        sync_in_progress = True
+        active_sync_jobs = len(pinned_playlists)
+        for playlist in pinned_playlists:
+            _sync_playlist_videos(playlist.id)
+        last_auto_sync_at = datetime.datetime.utcnow()
+    finally:
+        sync_in_progress = False
+        active_sync_jobs = 0
+        db.close()
+
+
+def _home_context(db: Session):
+    db_state = database.get_db_state()
+    api_key_valid = youtube.has_valid_key()
+    sources = crud.get_sources(db)
+    return {
+        "db_state": db_state,
+        "sync_error_message": sync_error_message,
+        "api_key_valid": api_key_valid,
+        "db_health_ok": db_health_ok,
+        "db_health_error": db_health_error,
+        "api_key_status_message": api_key_status_message,
+        "api_key_validation_ok": api_key_validation_ok,
+        "AUTO_SYNC_INTERVAL_MINUTES": AUTO_SYNC_INTERVAL_MINUTES,
+        "sources": sources,
+    }
+
+
 @app.on_event("startup")
 async def validate_initial_api_key():
     """Validate any configured API key once at startup."""
@@ -63,29 +131,19 @@ async def validate_initial_api_key():
 
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
-    db_state = database.get_db_state()
-    api_key_valid = youtube.has_valid_key()
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "request": request,
-            "db_state": db_state,
-            "sync_error_message": sync_error_message,
-            "api_key_valid": api_key_valid,
-            "db_health_ok": db_health_ok,
-            "db_health_error": db_health_error,
-            "api_key_status_message": api_key_status_message,
-            "api_key_validation_ok": api_key_validation_ok,
-        },
-    )
+async def read_root(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    queue_auto_sync(background_tasks)
+    ctx = _home_context(db)
+    ctx["request"] = request
+    return templates.TemplateResponse(request, "index.html", ctx)
 
 
 @app.get("/sources", response_class=HTMLResponse)
-async def read_sources(request: Request, db: Session = Depends(get_db)):
-    sources = crud.get_sources(db)
-    return templates.TemplateResponse(request, "sources.html", {"request": request, "sources": sources})
+async def read_sources(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    queue_auto_sync(background_tasks)
+    ctx = _home_context(db)
+    ctx["request"] = request
+    return templates.TemplateResponse(request, "index.html", ctx)
 
 
 @app.post("/sources", response_class=RedirectResponse)
@@ -180,16 +238,14 @@ async def create_source_from_form(
         return RedirectResponse(url="/sources", status_code=303)
     except Exception as exc:  # noqa: BLE001
         logging.exception("Create source failed")
-        sources = crud.get_sources(db)
-        return templates.TemplateResponse(
-            "sources.html",
+        ctx = _home_context(db)
+        ctx.update(
             {
                 "request": request,
-                "sources": sources,
                 "error_message": f"Could not create source: {exc}",
-            },
-            status_code=400,
+            }
         )
+        return templates.TemplateResponse("index.html", ctx, status_code=400)
 
 
 @app.delete("/sources/{source_id}", status_code=204)
@@ -262,11 +318,28 @@ async def toggle_pin_playlist(
         return _inline_error(f"Could not update pin: {exc}")
 
 
+@app.post("/sources/{source_id}/playlists/pin_all", response_class=HTMLResponse)
+async def bulk_pin_playlists(
+    source_id: int, request: Request, action: str = Form(...), db: Session = Depends(get_db)
+):
+    try:
+        if action not in ("pin", "unpin"):
+            raise HTTPException(status_code=400, detail="Invalid action")
+        crud.set_all_playlists_pinned(db, source_id=source_id, pinned=(action == "pin"))
+        source = crud.get_source(db, source_id=source_id)
+        return templates.TemplateResponse(
+            request, "playlist-list.html", {"request": request, "playlists": source.playlists}
+        )
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Bulk pin/unpin failed")
+        return _inline_error(f"Could not update pins: {exc}")
+
+
 def _sync_playlist_videos(playlist_id: int):
     """Background job to sync a single playlist."""
     db = database.SessionLocal()
     try:
-        global sync_error_message
+        global sync_error_message, active_sync_jobs, sync_in_progress
         playlist = crud.get_playlist(db, playlist_id=playlist_id)
         if not playlist:
             return
@@ -306,6 +379,10 @@ def _sync_playlist_videos(playlist_id: int):
         sync_error_message = f"Sync failed; check API key/network. Details: {exc}.{suggestion_text}"
     finally:
         db.close()
+        if active_sync_jobs > 0:
+            active_sync_jobs -= 1
+            if active_sync_jobs == 0:
+                sync_in_progress = False
 
 
 @app.post("/sync/run", response_class=HTMLResponse)
@@ -392,6 +469,7 @@ def _export_videos_content(db: Session, fmt: str, status: Optional[str]):
 @app.get("/export/markdown")
 async def export_markdown(status: Optional[str] = None, db: Session = Depends(get_db)):
     try:
+        sync_pinned_now()
         return _export_videos_content(db, fmt="markdown", status=status)
     except Exception as exc:  # noqa: BLE001
         logging.exception("Export markdown failed")
@@ -401,6 +479,7 @@ async def export_markdown(status: Optional[str] = None, db: Session = Depends(ge
 @app.get("/export/csv")
 async def export_csv(status: Optional[str] = None, db: Session = Depends(get_db)):
     try:
+        sync_pinned_now()
         return _export_videos_content(db, fmt="csv", status=status)
     except Exception as exc:  # noqa: BLE001
         logging.exception("Export CSV failed")

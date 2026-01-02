@@ -1,4 +1,4 @@
-<li class="flex items-center justify-between" id="playlist-{{ playlist.id }}">
+<li class="flex items-center justify-between" id="playlist-{{ playlist.id }}" x-show="!filter || '{{ playlist.title | lower }}'.includes(filter.toLowerCase())" x-cloak>
     <span>{{ playlist.title }}</span>
     <button
         hx-post="/playlists/{{ playlist.id }}/pin"

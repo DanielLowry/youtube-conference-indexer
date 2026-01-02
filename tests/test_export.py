@@ -46,8 +46,12 @@ def test_export_endpoints(client: TestClient, app_ctx):
     try:
         content = export_mod.generate_markdown_export(crud.get_videos(session, status="queued"))
         assert "Export Video" in content
+        assert "ExportPlaylist" in content
+        assert "Export" in content  # description
         content_csv = export_mod.generate_csv_export(crud.get_videos(session, status="queued"))
         assert "Export Video" in content_csv
+        assert "ExportPlaylist" in content_csv
+        assert "Export" in content_csv
     finally:
         session.close()
 
