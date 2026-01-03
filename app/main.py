@@ -405,6 +405,7 @@ async def run_sync(background_tasks: BackgroundTasks, request: Request, db: Sess
 
     return HTMLResponse(f"""
     <div id="sync-status" class="text-green-500">
+    
         Sync started for {len(pinned_playlists)} pinned playlist(s). This may take a moment.
     </div>
     """)

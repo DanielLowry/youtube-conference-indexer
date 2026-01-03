@@ -10,7 +10,7 @@
 uv venv
 uv pip install -r requirements.txt
 ```
-Create `.env` in the repo root (defaults to SQLite at `data/indexer.db`):
+You can start the app without an API key—the UI will show a warning and let you paste one on the **API Key** page. To set it upfront, create `.env` in the repo root (defaults to SQLite at `data/indexer.db`):
 ```
 YOUTUBE_API_KEY=your_api_key_here
 DATABASE_URL=sqlite:///./data/indexer.db

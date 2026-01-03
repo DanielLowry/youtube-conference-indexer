@@ -147,7 +147,7 @@
                 <div class="flex items-center space-x-2">
                     {% if source.type == 'channel' %}
                     <button
-                        hx-get="/sources/{{ source.id }}/playlists"
+                        hx-post="/sources/{{ source.id }}/discover"
                         hx-target="#source-{{ source.id }}-playlists"
                         hx-swap="innerHTML"
                         hx-queue="last"
