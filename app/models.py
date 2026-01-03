@@ -22,7 +22,7 @@ class Source(Base):
     type = Column(String, index=True)  # "channel" or "playlist"
     external_id = Column(String, unique=True, index=True)
     name = Column(String)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
 
     playlists = relationship("Playlist", back_populates="source", cascade="all, delete-orphan")
 

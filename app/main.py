@@ -1,16 +1,31 @@
 import datetime
 import logging
+from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from typing import Optional
 
 from . import crud, models, schemas, youtube, export, database, state
 from .services import sync as sync_service
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Validate any configured API key once at startup (modern lifespan API)."""
+    key = youtube.get_api_key()
+    if key and "your_api_key_here" not in key:
+        ok, message = youtube.validate_api_key()
+        state.api_key_status_message = message
+        state.api_key_validation_ok = ok
+        if not ok:
+            logging.warning("API key validation failed on startup: %s", message)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 templates = Jinja2Templates(directory="templates")
 
@@ -72,19 +87,6 @@ def _home_context(db: Session):
         "sync_steps_total": state.sync_steps_total,
         "playlist_status": playlist_status,
     }
-
-
-@app.on_event("startup")
-async def validate_initial_api_key():
-    """Validate any configured API key once at startup."""
-    key = youtube.get_api_key()
-    if not key or "your_api_key_here" in key:
-        return
-    ok, message = youtube.validate_api_key()
-    state.api_key_status_message = message
-    state.api_key_validation_ok = ok
-    if not ok:
-        logging.warning("API key validation failed on startup: %s", message)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -151,6 +153,7 @@ async def create_source_from_form(
                 if not youtube.has_valid_key():
                     sources = crud.get_sources(db)
                     return templates.TemplateResponse(
+                        request,
                         "sources.html",
                         {
                             "request": request,
@@ -167,6 +170,7 @@ async def create_source_from_form(
                 if not channel_suggestions:
                     sources = crud.get_sources(db)
                     return templates.TemplateResponse(
+                        request,
                         "sources.html",
                         {
                             "request": request,
@@ -198,6 +202,7 @@ async def create_source_from_form(
                 else:
                     sources = crud.get_sources(db)
                     return templates.TemplateResponse(
+                        request,
                         "sources.html",
                         {
                             "request": request,
@@ -232,7 +237,7 @@ async def create_source_from_form(
                 "error_message": f"Could not create source: {exc}",
             }
         )
-        return templates.TemplateResponse("index.html", ctx, status_code=400)
+        return templates.TemplateResponse(request, "index.html", ctx, status_code=400)
 
 
 @app.delete("/sources/{source_id}", status_code=204)

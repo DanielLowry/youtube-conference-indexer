@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
 from app import crud, schemas
@@ -32,7 +34,7 @@ def test_search_handles_special_chars(client: TestClient, app_ctx):
                 external_id="VIDFTS",
                 title="C++ talk",
                 description="About C++ templates",
-                published_at=__import__("datetime").datetime.utcnow(),
+                published_at=datetime.now(UTC),
                 duration_seconds=100,
                 channel_title="Chan",
             ),

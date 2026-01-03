@@ -11,7 +11,7 @@ def queue_auto_sync(background_tasks: BackgroundTasks):
     """Schedule a sync if enough time has passed and not already running."""
     from datetime import timedelta
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.UTC)
     if state.sync_in_progress:
         return
     if state.last_auto_sync_at and now - state.last_auto_sync_at < timedelta(minutes=state.AUTO_SYNC_INTERVAL_MINUTES):
@@ -50,7 +50,7 @@ def sync_pinned_now():
     try:
         pinned_playlists = crud.get_pinned_playlists(db)
         if not pinned_playlists:
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.UTC)
             state.last_sync_started_at = now
             state.last_sync_completed_at = now
             state.sync_in_progress = False
@@ -64,18 +64,18 @@ def sync_pinned_now():
         state.sync_in_progress = True
         state.active_sync_jobs = len(pinned_playlists)
         state.total_sync_jobs = len(pinned_playlists)
-        state.last_sync_started_at = datetime.datetime.utcnow()
+        state.last_sync_started_at = datetime.datetime.now(datetime.UTC)
         state.sync_message = "Sync started."
         state.sync_steps_done = 0
         state.sync_steps_total = len(pinned_playlists)
         for playlist in pinned_playlists:
             state.set_playlist_status(playlist.id, state="queued", total=0, done=0, message="Queued")
             sync_playlist_videos(playlist.id)
-        state.last_auto_sync_at = datetime.datetime.utcnow()
+        state.last_auto_sync_at = datetime.datetime.now(datetime.UTC)
     finally:
         state.sync_in_progress = False
         state.active_sync_jobs = 0
-        state.last_sync_completed_at = datetime.datetime.utcnow()
+        state.last_sync_completed_at = datetime.datetime.now(datetime.UTC)
         state.sync_message = "Sync completed."
         db.close()
 
@@ -139,7 +139,7 @@ def sync_playlist_videos(playlist_id: int):
                 done=status.get("done", 0) + 1,
                 message="Processing videos",
             )
-        playlist.last_synced_at = datetime.datetime.utcnow()
+        playlist.last_synced_at = datetime.datetime.now(datetime.UTC)
         db.commit()
         state.set_playlist_status(
             playlist.id,
@@ -175,5 +175,5 @@ def sync_playlist_videos(playlist_id: int):
             state.active_sync_jobs -= 1
             if state.active_sync_jobs == 0:
                 state.sync_in_progress = False
-                state.last_sync_completed_at = datetime.datetime.utcnow()
+                state.last_sync_completed_at = datetime.datetime.now(datetime.UTC)
                 state.sync_message = "Sync completed."

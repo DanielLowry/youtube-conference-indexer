@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
 from app import crud, schemas
@@ -23,7 +25,7 @@ def test_update_status_and_tags(client: TestClient, app_ctx):
                 external_id="VIDSTATUS",
                 title="Status Video",
                 description="Test",
-                published_at=__import__("datetime").datetime.utcnow(),
+                published_at=datetime.now(UTC),
                 duration_seconds=60,
                 channel_title="Chan",
             ),
@@ -64,7 +66,7 @@ def test_update_status_error_returns_message(client: TestClient, app_ctx, monkey
                 external_id="VIDERR",
                 title="Err Video",
                 description="Desc",
-                published_at=__import__("datetime").datetime.utcnow(),
+                published_at=datetime.now(UTC),
                 duration_seconds=10,
                 channel_title="Chan",
             ),

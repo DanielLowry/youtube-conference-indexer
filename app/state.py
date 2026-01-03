@@ -32,7 +32,7 @@ def set_playlist_status(playlist_id: int, state: str, total: int = 0, done: int 
         "total": total,
         "done": done,
         "message": message,
-        "updated_at": datetime.datetime.utcnow(),
+        "updated_at": datetime.datetime.now(datetime.UTC),
     }
     if state == "cancelled":
         playlist_cancelled.add(playlist_id)

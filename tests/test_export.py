@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app import crud, schemas
 
+from datetime import datetime, UTC
 
 def test_export_endpoints(client: TestClient, app_ctx):
     session = app_ctx["SessionLocal"]()
@@ -31,7 +32,7 @@ def test_export_endpoints(client: TestClient, app_ctx):
                 external_id="VIDEXP",
                 title="Export Video",
                 description="Export",
-                published_at=__import__("datetime").datetime.utcnow(),
+                published_at=datetime.now(UTC),
                 duration_seconds=90,
                 channel_title="Chan",
             ),
