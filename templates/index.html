@@ -144,21 +144,33 @@
                     <div>
                         <span class="font-bold">{{ source.name }}</span> ({{ source.type }}: {{ source.external_id }})
                     </div>
-                    <div class="flex items-center space-x-2">
-                        {% if source.type == 'channel' %}
-                        <button
-                            hx-post="/sources/{{ source.id }}/discover"
-                            hx-target="#source-{{ source.id }}-playlists"
-                            hx-swap="innerHTML"
-                            class="text-blue-600 hover:text-blue-900"
-                        >
-                            Discover Playlists
-                        </button>
-                        {% endif %}
-                        <button
-                            hx-delete="/sources/{{ source.id }}"
-                            hx-target="closest li"
-                            hx-swap="outerHTML"
+                <div class="flex items-center space-x-2">
+                    {% if source.type == 'channel' %}
+                    <button
+                        hx-get="/sources/{{ source.id }}/playlists"
+                        hx-target="#source-{{ source.id }}-playlists"
+                        hx-swap="innerHTML"
+                        hx-queue="last"
+                        hx-sync="this:abort"
+                        class="text-blue-600 hover:text-blue-900"
+                    >
+                        Discover Playlists
+                    </button>
+                    <button
+                        hx-get="/sources/{{ source.id }}/playlists?refresh=1"
+                        hx-target="#source-{{ source.id }}-playlists"
+                        hx-swap="innerHTML"
+                        hx-queue="last"
+                        hx-sync="this:abort"
+                        class="text-blue-600 hover:text-blue-900"
+                    >
+                        Refresh
+                    </button>
+                    {% endif %}
+                    <button
+                        hx-delete="/sources/{{ source.id }}"
+                        hx-target="closest li"
+                        hx-swap="outerHTML"
                             class="text-red-600 hover:text-red-900"
                         >
                             Delete
@@ -188,7 +200,16 @@
                             class="text-xs px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600"
                         >Unpin all</button>
                     </div>
-                    <ul id="source-{{ source.id }}-playlists" class="ml-4 mt-2 space-y-1 list-disc list-inside">
+                    <ul
+                        id="source-{{ source.id }}-playlists"
+                        class="ml-4 mt-2 space-y-1 list-disc list-inside"
+                        hx-get="/sources/{{ source.id }}/playlists"
+                        hx-trigger="load delay:150ms"
+                        hx-target="this"
+                        hx-swap="innerHTML"
+                        hx-sync="this:abort"
+                        hx-queue="last"
+                    >
                         {% for playlist in source.playlists %}
                             {% include "playlist-item.html" %}
                         {% endfor %}

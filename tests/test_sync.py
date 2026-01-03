@@ -48,9 +48,9 @@ def test_sync_background_creates_videos(client: TestClient, app_ctx, monkeypatch
     assert resp.status_code == 200
     assert "Sync started" in resp.text
 
-    from app.main import _sync_playlist_videos
+    from app.services.sync import sync_playlist_videos
 
-    _sync_playlist_videos(playlist_id)
+    sync_playlist_videos(playlist_id)
 
     session = app_ctx["SessionLocal"]()
     try:
@@ -65,7 +65,8 @@ def test_sync_background_creates_videos(client: TestClient, app_ctx, monkeypatch
 
 def test_sync_failure_suggests_playlists(monkeypatch):
     from app import main as app_main
-    app_main.sync_error_message = None
+    from app import state
+    state.sync_error_message = None
 
     def _fail_videos(_playlist_id: str):
         raise RuntimeError("playlist not found")
@@ -93,6 +94,9 @@ def test_sync_failure_suggests_playlists(monkeypatch):
     finally:
         session.close()
 
-    app_main._sync_playlist_videos(pid)
-    assert app_main.sync_error_message is not None
-    assert "Maybe right one" in app_main.sync_error_message
+    from app.services.sync import sync_playlist_videos
+    from app import state
+
+    sync_playlist_videos(pid)
+    assert state.sync_error_message is not None
+    assert "Maybe right one" in state.sync_error_message

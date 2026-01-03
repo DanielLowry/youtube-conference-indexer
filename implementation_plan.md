@@ -94,15 +94,27 @@ Goal: Allow running without a persistent DB, with clear warnings and a toggle.
 
 --
 
-## Phase 7: Live UX & Async Orchestration - Post-MVP - [ ]
-Goal: “Modern app” responsiveness: prefetch, optimistic UI, background sync, and visible progress.
+## Phase 7A: Live UX & Optimistic UI - Post-MVP - [x]
+Goal: Make key interactions feel instant and resilient in the UI.
 
-- [ ] Channel selection auto-loads playlists (no extra click): htmx `change delay:150ms` with `hx-sync="this:abort"` and indicator; cache playlists per channel for ~1h; “Refresh” override button.
-- [ ] Pinning is optimistic + triggers fetch immediately: UI updates star instantly; server enqueues background video fetch; pinned row polls status (`load, every 1s`) until done/error, then stops.
+- [x] Channel selection auto-loads playlists (no extra click): htmx `change delay:150ms` with `hx-sync="this:abort"` and indicator; cache playlists per channel for ~1h; “Refresh” override button.
+- [x] Pinning is optimistic + triggers fetch immediately: UI updates star instantly; server enqueues background video fetch; pinned row polls status (`load, every 1s`) until done/error, then stops.
+- [x] Progress UX: per-playlist status dashboard (Queued/Fetching N/M/Ready/Error/Cancelled), progressive counts for large playlists, disable controls while in-flight; cancel/abort stale work when unpinning.
+- [x] Async hygiene: use `hx-queue`, `hx-sync`, debounce (`delay:`), clear indicators, and job-based status endpoint to avoid races; stale-while-revalidate fragments update when fresh data arrives.
+
+--
+
+## Phase 7B: Background Orchestration & Prefetch - Post-MVP - [ ]
+Goal: Keep data fresh in the background without blocking the UI.
+
 - [ ] Background sync everywhere: trigger on pin/pin-all, on page load (stale-while-revalidate), and on timer; exports should only format cached data (never start heavy work).
-- [ ] Progress UX: per-playlist status dashboard (Queued/Fetching N/M/Ready/Error/Cancelled), progressive counts for large playlists, disable controls while in-flight; cancel/abort stale work when unpinning.
-- [ ] Async hygiene: use `hx-queue`, `hx-sync`, debounce (`delay:`), clear indicators, and job-based status endpoint to avoid races; stale-while-revalidate fragments update when fresh data arrives.
 - [ ] Prefetch/cache warming: trigger lightweight background requests on hover/load where useful; rely on server-side caching to make subsequent interactions instant.
+
+--
+
+## Phase 7C: Observability - Post-MVP - [ ]
+Goal: See what the app is doing without leaving the browser.
+
 - [ ] Observability/logging: rich console logs for prefetch, background jobs, cache hits/misses, sync progress, retries/backoff.
 - [ ] Personal observability: simple rotating file logger and a `/admin/debug` page showing DB mode, pinned counts, and last sync/error state.
 

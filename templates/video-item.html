@@ -16,6 +16,8 @@
             hx-delete="/videos/{{ video.id }}/tags"
             hx-target="#video-{{ video.id }}"
             hx-swap="outerHTML"
+            hx-queue="last"
+            hx-sync="this:abort"
             class="inline"
         >
             <input type="hidden" name="tag" value="{{ tag.name }}">
@@ -28,6 +30,8 @@
             hx-post="/videos/{{ video.id }}/tags"
             hx-target="#video-{{ video.id }}"
             hx-swap="outerHTML"
+            hx-queue="last"
+            hx-sync="this:abort"
             class="flex items-center space-x-1"
         >
             <input name="tag" placeholder="Add tag" class="border rounded px-2 py-1 text-xs" required>
@@ -40,6 +44,8 @@
             hx-post="/videos/{{ video.id }}/status"
             hx-target="#video-{{ video.id }}"
             hx-swap="outerHTML"
+            hx-queue="last"
+            hx-sync="this:abort"
             class="grid grid-cols-1 md:grid-cols-4 gap-2 items-end"
         >
             <div>

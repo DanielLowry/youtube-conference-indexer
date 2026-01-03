@@ -83,12 +83,24 @@
                 <div class="flex items-center space-x-2">
                     {% if source.type == 'channel' %}
                     <button
-                        hx-post="/sources/{{ source.id }}/discover"
+                        hx-get="/sources/{{ source.id }}/playlists"
                         hx-target="#source-{{ source.id }}-playlists"
                         hx-swap="innerHTML"
+                        hx-queue="last"
+                        hx-sync="this:abort"
                         class="text-blue-600 hover:text-blue-900"
                     >
                         Discover Playlists
+                    </button>
+                    <button
+                        hx-get="/sources/{{ source.id }}/playlists?refresh=1"
+                        hx-target="#source-{{ source.id }}-playlists"
+                        hx-swap="innerHTML"
+                        hx-queue="last"
+                        hx-sync="this:abort"
+                        class="text-blue-600 hover:text-blue-900"
+                    >
+                        Refresh
                     </button>
                     {% endif %}
                     <button
@@ -101,7 +113,16 @@
                     </button>
                 </div>
             </div>
-            <ul id="source-{{ source.id }}-playlists" class="ml-8 mt-2 space-y-1 list-disc list-inside">
+            <ul
+                id="source-{{ source.id }}-playlists"
+                class="ml-8 mt-2 space-y-1 list-disc list-inside"
+                hx-get="/sources/{{ source.id }}/playlists"
+                hx-trigger="load delay:150ms"
+                hx-target="this"
+                hx-swap="innerHTML"
+                hx-sync="this:abort"
+                hx-queue="last"
+            >
                 {% for playlist in source.playlists %}
                     {% include "playlist-item.html" %}
                 {% endfor %}

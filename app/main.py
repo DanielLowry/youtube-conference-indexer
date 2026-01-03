@@ -7,7 +7,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from . import crud, models, schemas, youtube, export, database
+from . import crud, models, schemas, youtube, export, database, state
+from .services import sync as sync_service
 
 app = FastAPI()
 
@@ -15,22 +16,7 @@ templates = Jinja2Templates(directory="templates")
 
 # ensure tables exist once models are loaded
 database.create_tables()
-db_health_ok, db_health_error = database.health_check()
-
-sync_error_message = None
-api_key_status_message = None
-api_key_validation_ok = None
-AUTO_SYNC_INTERVAL_MINUTES = 30
-last_auto_sync_at = None
-sync_in_progress = False
-active_sync_jobs = 0
-total_sync_jobs = 0
-last_sync_started_at = None
-last_sync_completed_at = None
-sync_message = ""
-sync_steps_done = 0
-sync_steps_total = 0
-
+state.db_health_ok, state.db_health_error = database.health_check()
 
 # Dependency
 def get_db():
@@ -58,121 +44,52 @@ def _page_error(request: Request, message: str, status_code: int = 500) -> HTMLR
     )
 
 
-def queue_auto_sync(background_tasks: BackgroundTasks):
-    """Schedule a sync if enough time has passed and not already running."""
-    from datetime import timedelta
-
-    global last_auto_sync_at, sync_in_progress, active_sync_jobs, total_sync_jobs, sync_error_message, last_sync_started_at, sync_message, sync_steps_done, sync_steps_total
-    now = datetime.datetime.utcnow()
-    if sync_in_progress:
-        return
-    if last_auto_sync_at and now - last_auto_sync_at < timedelta(minutes=AUTO_SYNC_INTERVAL_MINUTES):
-        return
-
-    db = database.SessionLocal()
-    try:
-        pinned_playlists = crud.get_pinned_playlists(db)
-        if not pinned_playlists:
-            last_auto_sync_at = now
-            last_sync_started_at = now
-            last_sync_completed_at = now
-            sync_message = "No pinned playlists to sync."
-            sync_steps_done = 0
-            sync_steps_total = 0
-            return
-        sync_error_message = None
-        sync_in_progress = True
-        active_sync_jobs = len(pinned_playlists)
-        total_sync_jobs = len(pinned_playlists)
-        last_sync_started_at = now
-        sync_message = "Sync started."
-        sync_steps_done = 0
-        sync_steps_total = len(pinned_playlists)
-        last_auto_sync_at = now
-        for playlist in pinned_playlists:
-            background_tasks.add_task(_sync_playlist_videos, playlist.id)
-    finally:
-        db.close()
-
-
-def sync_pinned_now():
-    """Force a sync of all pinned playlists (used before exports)."""
-    global sync_error_message, sync_in_progress, active_sync_jobs, total_sync_jobs, last_auto_sync_at, last_sync_started_at, last_sync_completed_at, sync_message, sync_steps_done, sync_steps_total
-    db = database.SessionLocal()
-    try:
-        pinned_playlists = crud.get_pinned_playlists(db)
-        if not pinned_playlists:
-            now = datetime.datetime.utcnow()
-            last_sync_started_at = now
-            last_sync_completed_at = now
-            sync_in_progress = False
-            active_sync_jobs = 0
-            total_sync_jobs = 0
-            sync_message = "No pinned playlists to sync."
-            sync_steps_done = 0
-            sync_steps_total = 0
-            return
-        sync_error_message = None
-        sync_in_progress = True
-        active_sync_jobs = len(pinned_playlists)
-        total_sync_jobs = len(pinned_playlists)
-        last_sync_started_at = datetime.datetime.utcnow()
-        sync_message = "Sync started."
-        sync_steps_done = 0
-        sync_steps_total = len(pinned_playlists)
-        for playlist in pinned_playlists:
-            _sync_playlist_videos(playlist.id)
-        last_auto_sync_at = datetime.datetime.utcnow()
-    finally:
-        sync_in_progress = False
-        active_sync_jobs = 0
-        last_sync_completed_at = datetime.datetime.utcnow()
-        sync_message = "Sync completed."
-        db.close()
-
-
 def _home_context(db: Session):
     db_state = database.get_db_state()
     api_key_valid = youtube.has_valid_key()
     sources = crud.get_sources(db)
+    playlist_status = {}
+    for source in sources:
+        for pl in source.playlists:
+            playlist_status[pl.id] = state.get_playlist_status(pl.id)
     return {
         "db_state": db_state,
-        "sync_error_message": sync_error_message,
+        "sync_error_message": state.sync_error_message,
         "api_key_valid": api_key_valid,
-        "db_health_ok": db_health_ok,
-        "db_health_error": db_health_error,
-        "api_key_status_message": api_key_status_message,
-        "api_key_validation_ok": api_key_validation_ok,
-        "AUTO_SYNC_INTERVAL_MINUTES": AUTO_SYNC_INTERVAL_MINUTES,
+        "db_health_ok": state.db_health_ok,
+        "db_health_error": state.db_health_error,
+        "api_key_status_message": state.api_key_status_message,
+        "api_key_validation_ok": state.api_key_validation_ok,
+        "AUTO_SYNC_INTERVAL_MINUTES": state.AUTO_SYNC_INTERVAL_MINUTES,
         "sources": sources,
-        "sync_in_progress": sync_in_progress,
-        "active_sync_jobs": active_sync_jobs,
-        "total_sync_jobs": total_sync_jobs,
-        "last_sync_started_at": last_sync_started_at,
-        "last_sync_completed_at": last_sync_completed_at,
-        "sync_message": sync_message,
-        "sync_steps_done": sync_steps_done,
-        "sync_steps_total": sync_steps_total,
+        "sync_in_progress": state.sync_in_progress,
+        "active_sync_jobs": state.active_sync_jobs,
+        "total_sync_jobs": state.total_sync_jobs,
+        "last_sync_started_at": state.last_sync_started_at,
+        "last_sync_completed_at": state.last_sync_completed_at,
+        "sync_message": state.sync_message,
+        "sync_steps_done": state.sync_steps_done,
+        "sync_steps_total": state.sync_steps_total,
+        "playlist_status": playlist_status,
     }
 
 
 @app.on_event("startup")
 async def validate_initial_api_key():
     """Validate any configured API key once at startup."""
-    global api_key_status_message, api_key_validation_ok
     key = youtube.get_api_key()
     if not key or "your_api_key_here" in key:
         return
     ok, message = youtube.validate_api_key()
-    api_key_status_message = message
-    api_key_validation_ok = ok
+    state.api_key_status_message = message
+    state.api_key_validation_ok = ok
     if not ok:
         logging.warning("API key validation failed on startup: %s", message)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    queue_auto_sync(background_tasks)
+    sync_service.queue_auto_sync(background_tasks)
     ctx = _home_context(db)
     ctx["request"] = request
     return templates.TemplateResponse(request, "index.html", ctx)
@@ -182,21 +99,21 @@ async def read_root(request: Request, background_tasks: BackgroundTasks, db: Ses
 async def sync_status(request: Request):
     percent = 0
     completed = 0
-    total_steps = sync_steps_total or total_sync_jobs or 0
-    done_steps = sync_steps_done or 0
+    total_steps = state.sync_steps_total or state.total_sync_jobs or 0
+    done_steps = state.sync_steps_done or 0
     if total_steps:
         completed = min(done_steps, total_steps)
         percent = int((completed / total_steps) * 100)
     status_text = ""
-    if sync_in_progress:
+    if state.sync_in_progress:
         if total_steps:
             status_text = f"Sync in progress: {percent}% ({completed}/{total_steps} steps)"
         else:
             status_text = "Sync in progress..."
-    elif last_sync_completed_at:
-        status_text = f"Last sync completed at {last_sync_completed_at} UTC"
-    elif last_sync_started_at:
-        status_text = sync_message or "Sync attempted but nothing to do (no pinned playlists)."
+    elif state.last_sync_completed_at:
+        status_text = f"Last sync completed at {state.last_sync_completed_at} UTC"
+    elif state.last_sync_started_at:
+        status_text = state.sync_message or "Sync attempted but nothing to do (no pinned playlists)."
     else:
         status_text = "No sync has run yet."
     bar = f"""
@@ -210,7 +127,7 @@ async def sync_status(request: Request):
 
 @app.get("/sources", response_class=HTMLResponse)
 async def read_sources(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    queue_auto_sync(background_tasks)
+    sync_service.queue_auto_sync(background_tasks)
     ctx = _home_context(db)
     ctx["request"] = request
     return templates.TemplateResponse(request, "index.html", ctx)
@@ -323,6 +240,48 @@ async def delete_source(source_id: int, db: Session = Depends(get_db)):
     crud.delete_source(db=db, source_id=source_id)
 
 
+@app.get("/sources/{source_id}/playlists", response_class=HTMLResponse)
+async def load_source_playlists(
+    source_id: int,
+    request: Request,
+    refresh: bool = False,
+    db: Session = Depends(get_db),
+):
+    source = crud.get_source(db, source_id=source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    if source.type == "channel":
+        needs_discover = refresh or not source.playlists or state.discover_cache_expired(source_id)
+        if needs_discover:
+            if not youtube.has_valid_key():
+                return _inline_error("No valid YouTube API key configured. Set one on the API Key page.")
+            try:
+                playlists_data = youtube.get_channel_playlists(source.external_id)
+                for item in playlists_data:
+                    playlist_id = item["id"]
+                    existing_playlist = crud.get_playlist_by_external_id(db, external_id=playlist_id)
+                    if not existing_playlist:
+                        playlist = schemas.PlaylistCreate(
+                            external_id=playlist_id,
+                            title=item["snippet"]["title"],
+                            description=item["snippet"]["description"],
+                        )
+                        crud.create_playlist(db, playlist=playlist, source_id=source_id)
+                state.mark_discover_cache(source_id)
+            except Exception as exc:  # noqa: BLE001
+                logging.exception("Auto-discover playlists failed")
+                return _inline_error(f"Error loading playlists: {exc}")
+
+    db.refresh(source)
+    playlist_status = {pl.id: state.get_playlist_status(pl.id) for pl in source.playlists}
+    return templates.TemplateResponse(
+        request,
+        "playlist-list.html",
+        {"request": request, "playlists": source.playlists, "playlist_status": playlist_status},
+    )
+
+
 @app.post("/sources/{source_id}/discover", response_class=HTMLResponse)
 async def discover_playlists(
     source_id: int, request: Request, db: Session = Depends(get_db)
@@ -369,19 +328,31 @@ async def discover_playlists(
             )
 
     db.refresh(source)
+    state.mark_discover_cache(source_id)
+    playlist_status = {pl.id: state.get_playlist_status(pl.id) for pl in source.playlists}
     return templates.TemplateResponse(
-        request, "playlist-list.html", {"request": request, "playlists": source.playlists}
+        request,
+        "playlist-list.html",
+        {"request": request, "playlists": source.playlists, "playlist_status": playlist_status},
     )
 
 
 @app.post("/playlists/{playlist_id}/pin", response_class=HTMLResponse)
 async def toggle_pin_playlist(
-    playlist_id: int, request: Request, db: Session = Depends(get_db)
+    playlist_id: int, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
 ):
     try:
         playlist = crud.toggle_playlist_pinned(db, playlist_id=playlist_id)
+        if playlist.pinned:
+            state.set_playlist_status(playlist.id, state="queued", total=0, done=0, message="Queued after pin")
+            background_tasks.add_task(sync_service.sync_playlist_videos, playlist.id)
+        else:
+            state.set_playlist_status(playlist.id, state="cancelled", total=0, done=0, message="Cancelled after unpin")
+        playlist_status = {playlist.id: state.get_playlist_status(playlist.id)}
         return templates.TemplateResponse(
-            request, "playlist-item.html", {"request": request, "playlist": playlist}
+            request,
+            "playlist-item.html",
+            {"request": request, "playlist": playlist, "playlist_status": playlist_status},
         )
     except Exception as exc:  # noqa: BLE001
         logging.exception("Pin/unpin failed")
@@ -397,77 +368,27 @@ async def bulk_pin_playlists(
             raise HTTPException(status_code=400, detail="Invalid action")
         crud.set_all_playlists_pinned(db, source_id=source_id, pinned=(action == "pin"))
         source = crud.get_source(db, source_id=source_id)
+        playlist_status = {}
+        for pl in source.playlists:
+            if action == "pin":
+                state.set_playlist_status(pl.id, state="queued", total=0, done=0, message="Queued after pin-all")
+                background_tasks.add_task(sync_service.sync_playlist_videos, pl.id)
+            else:
+                state.set_playlist_status(pl.id, state="cancelled", total=0, done=0, message="Cancelled after unpin-all")
+            playlist_status[pl.id] = state.get_playlist_status(pl.id)
         return templates.TemplateResponse(
-            request, "playlist-list.html", {"request": request, "playlists": source.playlists}
+            request,
+            "playlist-list.html",
+            {"request": request, "playlists": source.playlists, "playlist_status": playlist_status},
         )
     except Exception as exc:  # noqa: BLE001
         logging.exception("Bulk pin/unpin failed")
         return _inline_error(f"Could not update pins: {exc}")
 
 
-def _sync_playlist_videos(playlist_id: int):
-    """Background job to sync a single playlist."""
-    db = database.SessionLocal()
-    try:
-        global sync_error_message, active_sync_jobs, sync_in_progress, last_sync_completed_at, sync_message, sync_steps_done, sync_steps_total
-        playlist = crud.get_playlist(db, playlist_id=playlist_id)
-        if not playlist:
-            return
-
-        videos_data = youtube.get_videos_for_playlist(playlist.external_id)
-        # include per-video steps for progress
-        sync_steps_total += len(videos_data)
-        new_count = 0
-        for item in videos_data:
-            video_id = item["id"]
-            existing_video = crud.get_video_by_external_id(db, external_id=video_id)
-            if existing_video:
-                sync_steps_done += 1
-                continue
-            video = schemas.VideoCreate(
-                external_id=video_id,
-                title=item["snippet"]["title"],
-                description=item["snippet"].get("description"),
-                published_at=datetime.datetime.fromisoformat(
-                    item["snippet"]["publishedAt"].replace("Z", "+00:00")
-                ),
-                duration_seconds=item["contentDetails"]["duration_seconds"],
-                channel_title=item["snippet"]["channelTitle"],
-            )
-            crud.create_video(db, video=video, playlist_id=playlist.id)
-            new_count += 1
-            sync_steps_done += 1
-        playlist.last_synced_at = datetime.datetime.utcnow()
-        db.commit()
-        logging.info("Synced %s new videos for playlist %s", new_count, playlist.external_id)
-    except Exception as exc:  # noqa: BLE001
-        logging.exception("Sync failed for playlist_id=%s", playlist_id)
-        suggestion_text = ""
-        try:
-            suggestions = youtube.search_playlists(playlist.external_id)
-            if suggestions:
-                human = "; ".join(f'{s["title"]} (ID: {s["id"]})' for s in suggestions)
-                suggestion_text = f" Possible playlists: {human}"
-        except Exception:
-            suggestion_text = ""
-        sync_error_message = f"Sync failed; check API key/network. Details: {exc}.{suggestion_text}"
-        sync_message = sync_error_message
-    finally:
-        db.close()
-        # mark playlist-level step complete
-        sync_steps_done += 1
-        if active_sync_jobs > 0:
-            active_sync_jobs -= 1
-            if active_sync_jobs == 0:
-                sync_in_progress = False
-                last_sync_completed_at = datetime.datetime.utcnow()
-                sync_message = "Sync completed."
-
-
 @app.post("/sync/run", response_class=HTMLResponse)
 async def run_sync(background_tasks: BackgroundTasks, request: Request, db: Session = Depends(get_db)):
-    global sync_error_message
-    sync_error_message = None
+    state.sync_error_message = None
     pinned_playlists = crud.get_pinned_playlists(db)
     if not pinned_playlists:
         return HTMLResponse(
@@ -479,13 +400,60 @@ async def run_sync(background_tasks: BackgroundTasks, request: Request, db: Sess
             status_code=200,
         )
     for playlist in pinned_playlists:
-        background_tasks.add_task(_sync_playlist_videos, playlist.id)
+        state.set_playlist_status(playlist.id, state="queued", total=0, done=0, message="Queued via manual sync")
+        background_tasks.add_task(sync_service.sync_playlist_videos, playlist.id)
 
     return HTMLResponse(f"""
     <div id="sync-status" class="text-green-500">
         Sync started for {len(pinned_playlists)} pinned playlist(s). This may take a moment.
     </div>
     """)
+
+
+@app.get("/playlists/{playlist_id}/status", response_class=HTMLResponse)
+async def playlist_status_fragment(playlist_id: int):
+    status = state.get_playlist_status(playlist_id)
+    state_value = status.get("state", "idle")
+    done = status.get("done", 0) or 0
+    total = status.get("total", 0) or 0
+    percent = 0
+    if total:
+        percent = int(min(done, total) / total * 100)
+    trigger = "load, every 1s" if state_value in ("queued", "fetching") else "load"
+    disabled = state_value in ("queued", "fetching")
+    message = status.get("message") or ""
+    content = f"""
+    <div
+        id="playlist-status-{playlist_id}"
+        data-state="{state_value}"
+        hx-get="/playlists/{playlist_id}/status"
+        hx-trigger="{trigger}"
+        hx-swap="outerHTML"
+        hx-on::afterSwap="
+            const btn = this.closest('li')?.querySelector('button');
+            if (!btn) return;
+            const st = this.dataset.state;
+            if (st === 'queued' || st === 'fetching') {
+                btn.setAttribute('disabled', 'disabled');
+                btn.classList.add('cursor-not-allowed', 'text-gray-300');
+            } else {
+                btn.removeAttribute('disabled');
+                btn.classList.remove('cursor-not-allowed', 'text-gray-300');
+            }
+        "
+        class="text-xs text-gray-700 space-y-1"
+    >
+        <div class="flex items-center space-x-2">
+            <span class="px-2 py-0.5 rounded-full text-white text-[10px] {'bg-blue-600' if state_value in ('queued','fetching') else 'bg-green-600' if state_value == 'ready' else 'bg-red-600' if state_value == 'error' else 'bg-gray-500'}">{state_value}</span>
+            <span>{message}</span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+            <div class="bg-green-500 h-2" style="width: {percent}%"></div>
+        </div>
+        <div class="text-[10px] text-gray-600">{done}/{total} steps</div>
+    </div>
+    """
+    return HTMLResponse(content)
 
 
 @app.post("/videos/{video_id}/status", response_class=HTMLResponse)
@@ -501,9 +469,9 @@ async def update_video_status(
         state = schemas.VideoStateCreate(status=status, notes=notes, score=score)
         crud.update_video_state(db, video_id=video_id, state=state)
         video = crud.get_video(db, video_id=video_id)
-        return templates.TemplateResponse(
-            request, "video-item.html", {"request": request, "video": video}
-        )
+    return templates.TemplateResponse(
+        request, "video-item.html", {"request": request, "video": video}
+    )
     except Exception as exc:  # noqa: BLE001
         logging.exception("Update status failed")
         return _inline_error(f"Could not update status: {exc}")
@@ -548,7 +516,7 @@ def _export_videos_content(db: Session, fmt: str, status: Optional[str]):
 @app.get("/export/markdown")
 async def export_markdown(status: Optional[str] = None, db: Session = Depends(get_db)):
     try:
-        sync_pinned_now()
+        sync_service.sync_pinned_now()
         return _export_videos_content(db, fmt="markdown", status=status)
     except Exception as exc:  # noqa: BLE001
         logging.exception("Export markdown failed")
@@ -558,7 +526,7 @@ async def export_markdown(status: Optional[str] = None, db: Session = Depends(ge
 @app.get("/export/csv")
 async def export_csv(status: Optional[str] = None, db: Session = Depends(get_db)):
     try:
-        sync_pinned_now()
+        sync_service.sync_pinned_now()
         return _export_videos_content(db, fmt="csv", status=status)
     except Exception as exc:  # noqa: BLE001
         logging.exception("Export CSV failed")
@@ -604,19 +572,18 @@ async def api_key_form(request: Request):
         {
             "request": request,
             "api_key_valid": youtube.has_valid_key(),
-            "api_key_status_message": api_key_status_message,
-            "api_key_validation_ok": api_key_validation_ok,
+            "api_key_status_message": state.api_key_status_message,
+            "api_key_validation_ok": state.api_key_validation_ok,
         },
     )
 
 
 @app.post("/api-key", response_class=HTMLResponse)
 async def set_api_key(request: Request, key: str = Form(...)):
-    global api_key_status_message, api_key_validation_ok
     youtube.set_api_key(key.strip())
     ok, message = youtube.validate_api_key()
-    api_key_status_message = message
-    api_key_validation_ok = ok
+    state.api_key_status_message = message
+    state.api_key_validation_ok = ok
     if not ok:
         return templates.TemplateResponse(
             request,
