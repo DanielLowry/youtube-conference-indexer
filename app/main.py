@@ -433,13 +433,13 @@ async def playlist_status_fragment(playlist_id: int):
             const btn = this.closest('li')?.querySelector('button');
             if (!btn) return;
             const st = this.dataset.state;
-            if (st === 'queued' || st === 'fetching') {
+            if (st === 'queued' || st === 'fetching') {{
                 btn.setAttribute('disabled', 'disabled');
                 btn.classList.add('cursor-not-allowed', 'text-gray-300');
-            } else {
+            }} else {{
                 btn.removeAttribute('disabled');
                 btn.classList.remove('cursor-not-allowed', 'text-gray-300');
-            }
+            }}
         "
         class="text-xs text-gray-700 space-y-1"
     >
@@ -464,14 +464,14 @@ async def update_video_status(
     notes: Optional[str] = Form(None),
     score: Optional[int] = Form(None),
     db: Session = Depends(get_db),
-):
+    ):
     try:
         state = schemas.VideoStateCreate(status=status, notes=notes, score=score)
         crud.update_video_state(db, video_id=video_id, state=state)
         video = crud.get_video(db, video_id=video_id)
-    return templates.TemplateResponse(
-        request, "video-item.html", {"request": request, "video": video}
-    )
+        return templates.TemplateResponse(
+            request, "video-item.html", {"request": request, "video": video}
+        )
     except Exception as exc:  # noqa: BLE001
         logging.exception("Update status failed")
         return _inline_error(f"Could not update status: {exc}")
