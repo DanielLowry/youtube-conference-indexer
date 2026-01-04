@@ -32,6 +32,8 @@ def set_playlist_status(playlist_id: int, state: str, total: int = 0, done: int 
         playlist_id,
         {
             "started_at": None,
+            "total": 0,
+            "done": 0,
         },
     )
     started_at = existing.get("started_at")
@@ -40,6 +42,8 @@ def set_playlist_status(playlist_id: int, state: str, total: int = 0, done: int 
     if state not in ("queued", "fetching"):
         # reset started_at so next sync shows fresh timing
         started_at = None
+    if not total and existing.get("total"):
+        total = existing["total"]
     logging.info(
         "playlist_status: id=%s state=%s done=%s total=%s message=%s",
         playlist_id,

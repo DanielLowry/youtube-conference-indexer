@@ -11,23 +11,17 @@ def test_channel_discovery_creates_playlists(client: TestClient, monkeypatch):
         ]
 
     monkeypatch.setattr("app.main.youtube.get_channel_playlists", fake_playlists)
+    monkeypatch.setattr("app.main.youtube.has_valid_key", lambda: True)
 
-    client.post(
+    page = client.post(
         "/sources",
         data={"name": "CppCon", "type": "channel", "external_id": "UCCHAN1"},
         follow_redirects=True,
     )
-    page = client.get("/sources")
+    assert page.status_code == 200
     assert "CppCon" in page.text
-
-    match = re.search(r"/sources/(\d+)/discover", page.text)
-    assert match, "Source id not found in rendered sources page"
-    source_id = match.group(1)
-
-    resp = client.post(f"/sources/{source_id}/discover")
-    assert resp.status_code == 200
-    assert "X" in resp.text
-    assert "Y" in resp.text
+    assert "X" in page.text
+    assert "Y" in page.text
 
 
 def test_channel_autodiscover_on_create_renders_playlists(client: TestClient, monkeypatch):
@@ -48,6 +42,57 @@ def test_channel_autodiscover_on_create_renders_playlists(client: TestClient, mo
     assert resp.status_code == 200
     assert "One" in resp.text
     assert "Two" in resp.text
+
+
+def test_playlist_status_prefills_itemcount(client: TestClient, app_ctx, monkeypatch):
+    def fake_playlists(channel_id: str):
+        return [
+            {"id": "PL1", "snippet": {"title": "One", "description": "d1"}, "contentDetails": {"itemCount": 5}},
+        ]
+
+    monkeypatch.setattr("app.main.youtube.get_channel_playlists", fake_playlists)
+    monkeypatch.setattr("app.main.youtube.has_valid_key", lambda: True)
+
+    client.post(
+        "/sources",
+        data={"name": "CppCon", "type": "channel", "external_id": "UCCHAN1"},
+        follow_redirects=True,
+    )
+    session = app_ctx["SessionLocal"]()
+    try:
+        pl = session.query(app_ctx["models"].Playlist).first()
+        resp = client.get(f"/playlists/{pl.id}/status")
+        assert resp.status_code == 200
+        assert "0/5" in resp.text
+        assert "Pin" in resp.text
+    finally:
+        session.close()
+
+
+def test_playlist_status_keeps_total_after_pin(client: TestClient, app_ctx, monkeypatch):
+    def fake_playlists(channel_id: str):
+        return [
+            {"id": "PL1", "snippet": {"title": "One", "description": "d1"}, "contentDetails": {"itemCount": 5}},
+        ]
+
+    monkeypatch.setattr("app.main.youtube.get_channel_playlists", fake_playlists)
+    monkeypatch.setattr("app.main.youtube.has_valid_key", lambda: True)
+
+    client.post(
+        "/sources",
+        data={"name": "CppCon", "type": "channel", "external_id": "UCCHAN1"},
+        follow_redirects=True,
+    )
+    session = app_ctx["SessionLocal"]()
+    try:
+        pl = session.query(app_ctx["models"].Playlist).first()
+        # pin playlist
+        client.post(f"/playlists/{pl.id}/pin")
+        resp = client.get(f"/playlists/{pl.id}/status")
+        assert resp.status_code == 200
+        assert "0/5" in resp.text  # total preserved
+    finally:
+        session.close()
 
 
 def test_channel_add_prompts_selection(client: TestClient, monkeypatch):

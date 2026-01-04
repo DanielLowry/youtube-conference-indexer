@@ -96,10 +96,20 @@ def sync_playlist_videos(playlist_id: int):
             return
 
         # Mark as fetching before network calls so the UI shows progress
-        logger.info("Sync start playlist_id=%s external_id=%s", playlist.id, playlist.external_id)
+        logger.info(
+            "Sync start playlist_id=%s title=%s external_id=%s",
+            playlist.id,
+            playlist.title,
+            playlist.external_id,
+        )
         state.set_playlist_status(playlist.id, state="fetching", total=0, done=0, message="Fetching videos")
         videos_data = youtube.get_videos_for_playlist(playlist.external_id)
-        logger.info("Fetched playlist %s with %s video entries", playlist.external_id, len(videos_data))
+        logger.info(
+            "Fetched playlist external_id=%s title=%s with %s video entries",
+            playlist.external_id,
+            playlist.title,
+            len(videos_data),
+        )
         state.sync_steps_total += len(videos_data)
         state.set_playlist_status(playlist.id, state="fetching", total=len(videos_data), done=0, message="Fetching videos")
         new_count = 0
@@ -156,7 +166,13 @@ def sync_playlist_videos(playlist_id: int):
             done=len(videos_data),
             message=f"Synced {new_count} new videos",
         )
-        logger.info("Synced %s new videos for playlist %s", new_count, playlist.external_id)
+        logger.info(
+            "Synced %s new videos for playlist_id=%s title=%s external_id=%s",
+            new_count,
+            playlist.id,
+            playlist.title,
+            playlist.external_id,
+        )
     except Exception as exc:  # noqa: BLE001
         logging.exception("Sync failed for playlist_id=%s", playlist_id)
         suggestion_text = ""

@@ -147,16 +147,6 @@
                 <div class="flex items-center space-x-2">
                     {% if source.type == 'channel' %}
                     <button
-                        hx-post="/sources/{{ source.id }}/discover"
-                        hx-target="#source-{{ source.id }}-playlists"
-                        hx-swap="innerHTML"
-                        hx-queue="last"
-                        hx-sync="this:abort"
-                        class="text-blue-600 hover:text-blue-900"
-                    >
-                        Discover Playlists
-                    </button>
-                    <button
                         hx-get="/sources/{{ source.id }}/playlists?refresh=1"
                         hx-target="#source-{{ source.id }}-playlists"
                         hx-swap="innerHTML"

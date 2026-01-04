@@ -241,12 +241,31 @@ async def create_source_from_form(
                         playlist_id = item["id"]
                         existing_playlist = crud.get_playlist_by_external_id(db, external_id=playlist_id)
                         if not existing_playlist:
+                            video_count = item.get("contentDetails", {}).get("itemCount") or 0
                             playlist = schemas.PlaylistCreate(
                                 external_id=playlist_id,
                                 title=item["snippet"]["title"],
                                 description=item["snippet"]["description"],
                             )
-                            crud.create_playlist(db, playlist=playlist, source_id=created_source.id)
+                            created_pl = crud.create_playlist(db, playlist=playlist, source_id=created_source.id)
+                            state.set_playlist_status(
+                                created_pl.id,
+                                state="idle",
+                                total=video_count,
+                                done=0,
+                                message="Not synced yet",
+                            )
+                        else:
+                            video_count = item.get("contentDetails", {}).get("itemCount") or 0
+                            status = state.get_playlist_status(existing_playlist.id)
+                            if status.get("total") == 0 and video_count:
+                                state.set_playlist_status(
+                                    existing_playlist.id,
+                                    state=status.get("state", "idle"),
+                                    total=video_count,
+                                    done=status.get("done", 0),
+                                    message=status.get("message", "Not synced yet"),
+                                )
                     state.mark_discover_cache(created_source.id)
                 except Exception as exc:  # noqa: BLE001
                     logging.exception("Auto-discover on create failed")
@@ -293,12 +312,31 @@ async def load_source_playlists(
                     playlist_id = item["id"]
                     existing_playlist = crud.get_playlist_by_external_id(db, external_id=playlist_id)
                     if not existing_playlist:
+                        video_count = item.get("contentDetails", {}).get("itemCount") or 0
                         playlist = schemas.PlaylistCreate(
                             external_id=playlist_id,
                             title=item["snippet"]["title"],
                             description=item["snippet"]["description"],
                         )
-                        crud.create_playlist(db, playlist=playlist, source_id=source_id)
+                        created_pl = crud.create_playlist(db, playlist=playlist, source_id=source_id)
+                        state.set_playlist_status(
+                            created_pl.id,
+                            state="idle",
+                            total=video_count,
+                            done=0,
+                            message="Not synced yet",
+                        )
+                    else:
+                        video_count = item.get("contentDetails", {}).get("itemCount") or 0
+                        status = state.get_playlist_status(existing_playlist.id)
+                        if status.get("total") == 0 and video_count:
+                            state.set_playlist_status(
+                                existing_playlist.id,
+                                state=status.get("state", "idle"),
+                                total=video_count,
+                                done=status.get("done", 0),
+                                message=status.get("message", "Not synced yet"),
+                            )
                 state.mark_discover_cache(source_id)
             except Exception as exc:  # noqa: BLE001
                 logging.exception("Auto-discover playlists failed")
@@ -454,6 +492,7 @@ async def run_sync(background_tasks: BackgroundTasks, request: Request, db: Sess
 async def playlist_status_fragment(playlist_id: int, db: Session = Depends(get_db)):
     playlist = crud.get_playlist(db, playlist_id=playlist_id)
     pinned = bool(playlist and playlist.pinned)
+    title = playlist.title if playlist else ""
     status = state.get_playlist_status(playlist_id)
     state_value = status.get("state", "idle")
     done = status.get("done", 0) or 0
@@ -466,8 +505,9 @@ async def playlist_status_fragment(playlist_id: int, db: Session = Depends(get_d
     message = status.get("message") or ""
     started_at = status.get("started_at")
     logging.info(
-        "playlist_status_fragment id=%s state=%s done=%s total=%s message=%s started_at=%s",
+        "playlist_status_fragment id=%s title=%s state=%s done=%s total=%s message=%s started_at=%s",
         playlist_id,
+        title,
         state_value,
         done,
         total,
