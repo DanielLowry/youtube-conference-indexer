@@ -30,6 +30,26 @@ def test_channel_discovery_creates_playlists(client: TestClient, monkeypatch):
     assert "Y" in resp.text
 
 
+def test_channel_autodiscover_on_create_renders_playlists(client: TestClient, monkeypatch):
+    def fake_playlists(channel_id: str):
+        return [
+            {"id": "PL1", "snippet": {"title": "One", "description": "d1"}},
+            {"id": "PL2", "snippet": {"title": "Two", "description": "d2"}},
+        ]
+
+    monkeypatch.setattr("app.main.youtube.get_channel_playlists", fake_playlists)
+    monkeypatch.setattr("app.main.youtube.has_valid_key", lambda: True)
+
+    resp = client.post(
+        "/sources",
+        data={"name": "CppCon", "type": "channel", "external_id": "UCCHAN1"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "One" in resp.text
+    assert "Two" in resp.text
+
+
 def test_channel_add_prompts_selection(client: TestClient, monkeypatch):
     monkeypatch.setattr(
         "app.main.youtube.search_channels",

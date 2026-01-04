@@ -1,9 +1,14 @@
 {% set pstatus = playlist_status.get(playlist.id) if playlist_status is defined else None %}
 {% set state = pstatus.state if pstatus else 'idle' %}
 {% set disable_pin = state in ['queued','fetching'] %}
-<li class="flex flex-col space-y-1" id="playlist-{{ playlist.id }}" x-show="!filter || '{{ playlist.title | lower }}'.includes(filter.toLowerCase())" x-cloak>
+<li class="flex flex-col space-y-1" id="playlist-{{ playlist.id }}" x-show="!filter || '{{ playlist.title | lower }}'.includes(filter.toLowerCase())">
     <div class="flex items-center justify-between">
-        <span>{{ playlist.title }}</span>
+        <div class="flex items-center space-x-2">
+            <span class="font-semibold">{{ playlist.title }}</span>
+            {% if playlist.pinned %}
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-300">pinned</span>
+            {% endif %}
+        </div>
         <button
             {% if disable_pin %}disabled class="text-gray-300 cursor-not-allowed"{% else %}class="{% if playlist.pinned %}text-yellow-500{% else %}text-gray-400{% endif %} hover:text-gray-600"{% endif %}
             hx-post="/playlists/{{ playlist.id }}/pin"
@@ -23,11 +28,12 @@
             {% endif %}
         </button>
     </div>
-    <div
-        id="playlist-status-{{ playlist.id }}"
-        hx-get="/playlists/{{ playlist.id }}/status"
-        hx-trigger="{% if state in ['queued','fetching'] %}load, every 1s{% else %}load{% endif %}"
-        hx-swap="outerHTML"
-        class="text-xs text-gray-600"
-    ></div>
+    <details class="bg-gray-50 rounded p-2" x-data>
+        <summary class="text-xs text-blue-700 cursor-pointer select-none">Show sync progress</summary>
+        <div class="mt-2 text-xs text-gray-600" id="playlist-status-{{ playlist.id }}"
+            hx-get="/playlists/{{ playlist.id }}/status"
+            hx-trigger="{% if playlist.pinned %}revealed, every 2s{% else %}revealed{% endif %}"
+            hx-swap="outerHTML"
+        ></div>
+    </details>
 </li>

@@ -1,5 +1,6 @@
 import datetime
 import time
+import logging
 
 # Core app state (shared across routes/services)
 sync_error_message = None
@@ -27,12 +28,33 @@ playlist_cancelled: set[int] = set()
 
 
 def set_playlist_status(playlist_id: int, state: str, total: int = 0, done: int = 0, message: str = ""):
+    existing = playlist_sync_status.get(
+        playlist_id,
+        {
+            "started_at": None,
+        },
+    )
+    started_at = existing.get("started_at")
+    if state in ("queued", "fetching") and not started_at:
+        started_at = datetime.datetime.now(datetime.UTC)
+    if state not in ("queued", "fetching"):
+        # reset started_at so next sync shows fresh timing
+        started_at = None
+    logging.info(
+        "playlist_status: id=%s state=%s done=%s total=%s message=%s",
+        playlist_id,
+        state,
+        done,
+        total,
+        message,
+    )
     playlist_sync_status[playlist_id] = {
         "state": state,
         "total": total,
         "done": done,
         "message": message,
         "updated_at": datetime.datetime.now(datetime.UTC),
+        "started_at": started_at,
     }
     if state == "cancelled":
         playlist_cancelled.add(playlist_id)

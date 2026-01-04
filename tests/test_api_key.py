@@ -14,6 +14,9 @@ def test_app_starts_without_api_key(monkeypatch, tmp_path):
 
     from app import main as main_module  # noqa: WPS433
 
+    # ensure no key is present after import (env file might carry a value locally)
+    main_module.youtube.set_api_key("")
+
     client = TestClient(main_module.app)
     resp = client.get("/")
     assert resp.status_code == 200

@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 from . import crud, models, schemas, youtube, export, database, state
 from .services import sync as sync_service
 
+# Ensure our own log lines appear alongside uvicorn's
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -61,7 +64,9 @@ def _page_error(request: Request, message: str, status_code: int = 500) -> HTMLR
 
 def _home_context(db: Session):
     db_state = database.get_db_state()
-    api_key_valid = youtube.has_valid_key()
+    key = youtube.get_api_key()
+    key_present = bool(key) and "your_api_key_here" not in key
+    api_key_valid = youtube.has_valid_key() if key_present else False
     sources = crud.get_sources(db)
     playlist_status = {}
     for source in sources:
@@ -227,6 +232,24 @@ async def create_source_from_form(
                     description=None,
                 )
                 crud.create_playlist(db, playlist=playlist, source_id=created_source.id)
+        elif type == "channel":
+            # Auto-discover once so playlists render immediately (best-effort; non-blocking)
+            if youtube.has_valid_key():
+                try:
+                    playlists_data = youtube.get_channel_playlists(channel_id)
+                    for item in playlists_data:
+                        playlist_id = item["id"]
+                        existing_playlist = crud.get_playlist_by_external_id(db, external_id=playlist_id)
+                        if not existing_playlist:
+                            playlist = schemas.PlaylistCreate(
+                                external_id=playlist_id,
+                                title=item["snippet"]["title"],
+                                description=item["snippet"]["description"],
+                            )
+                            crud.create_playlist(db, playlist=playlist, source_id=created_source.id)
+                    state.mark_discover_cache(created_source.id)
+                except Exception as exc:  # noqa: BLE001
+                    logging.exception("Auto-discover on create failed")
         return RedirectResponse(url="/sources", status_code=303)
     except Exception as exc:  # noqa: BLE001
         logging.exception("Create source failed")
@@ -256,6 +279,8 @@ async def load_source_playlists(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
+    logging.info("Load playlists for source_id=%s refresh=%s", source_id, refresh)
+    before_count = len(source.playlists)
     if source.type == "channel":
         needs_discover = refresh or not source.playlists or state.discover_cache_expired(source_id)
         if needs_discover:
@@ -263,6 +288,7 @@ async def load_source_playlists(
                 return _inline_error("No valid YouTube API key configured. Set one on the API Key page.")
             try:
                 playlists_data = youtube.get_channel_playlists(source.external_id)
+                logging.info("Discovered %s playlists for source_id=%s", len(playlists_data), source_id)
                 for item in playlists_data:
                     playlist_id = item["id"]
                     existing_playlist = crud.get_playlist_by_external_id(db, external_id=playlist_id)
@@ -279,11 +305,19 @@ async def load_source_playlists(
                 return _inline_error(f"Error loading playlists: {exc}")
 
     db.refresh(source)
-    playlist_status = {pl.id: state.get_playlist_status(pl.id) for pl in source.playlists}
+    logging.info(
+        "Load playlists complete source_id=%s count_before=%s count_after=%s",
+        source_id,
+        before_count,
+        len(source.playlists),
+    )
+    # Prioritize pinned playlists first
+    playlists = sorted(source.playlists, key=lambda pl: (not pl.pinned, (pl.title or "").lower()))
+    playlist_status = {pl.id: state.get_playlist_status(pl.id) for pl in playlists}
     return templates.TemplateResponse(
         request,
         "playlist-list.html",
-        {"request": request, "playlists": source.playlists, "playlist_status": playlist_status},
+        {"request": request, "playlists": playlists, "playlist_status": playlist_status},
     )
 
 
@@ -417,7 +451,9 @@ async def run_sync(background_tasks: BackgroundTasks, request: Request, db: Sess
 
 
 @app.get("/playlists/{playlist_id}/status", response_class=HTMLResponse)
-async def playlist_status_fragment(playlist_id: int):
+async def playlist_status_fragment(playlist_id: int, db: Session = Depends(get_db)):
+    playlist = crud.get_playlist(db, playlist_id=playlist_id)
+    pinned = bool(playlist and playlist.pinned)
     status = state.get_playlist_status(playlist_id)
     state_value = status.get("state", "idle")
     done = status.get("done", 0) or 0
@@ -425,15 +461,69 @@ async def playlist_status_fragment(playlist_id: int):
     percent = 0
     if total:
         percent = int(min(done, total) / total * 100)
-    trigger = "load, every 1s" if state_value in ("queued", "fetching") else "load"
-    disabled = state_value in ("queued", "fetching")
+    # Only keep polling when queued/fetching; otherwise one-shot
+    trigger_attr = ' hx-trigger="every 2s"' if state_value in ("queued", "fetching") else ""
     message = status.get("message") or ""
+    started_at = status.get("started_at")
+    logging.info(
+        "playlist_status_fragment id=%s state=%s done=%s total=%s message=%s started_at=%s",
+        playlist_id,
+        state_value,
+        done,
+        total,
+        message,
+        started_at,
+    )
+    if not pinned:
+        state_value = "not_pinned"
+        message = "Pin this playlist to sync."
+        trigger_attr = ""
+    if state_value == "idle" and state.sync_in_progress:
+        state_value = "fetching"
+        trigger_attr = ' hx-trigger="every 2s"'
+        if not message:
+            message = "Sync running..."
+    elapsed_text = ""
+    if started_at:
+        elapsed_seconds = int((datetime.datetime.now(datetime.UTC) - started_at).total_seconds())
+        if elapsed_seconds >= 3600:
+            elapsed_text = f"{elapsed_seconds // 3600}h {(elapsed_seconds % 3600) // 60}m elapsed"
+        elif elapsed_seconds >= 60:
+            elapsed_text = f"{elapsed_seconds // 60}m {elapsed_seconds % 60}s elapsed"
+        else:
+            elapsed_text = f"{elapsed_seconds}s elapsed"
+
+    # If a playlist has been stuck in queued/fetching for too long, mark it as error to stop polling.
+    updated_at = status.get("updated_at")
+    if state_value in ("queued", "fetching") and updated_at:
+        age = (datetime.datetime.now(datetime.UTC) - updated_at).total_seconds()
+        if age > 180:
+            state.set_playlist_status(
+                playlist_id,
+                state="error",
+                total=total,
+                done=done,
+                message="Sync timed out. Check API key/network.",
+            )
+            status = state.get_playlist_status(playlist_id)
+            state_value = status.get("state", state_value)
+            message = status.get("message", message)
+            trigger = "load"
+
+    total_display = total if total else "?"
+    indeterminate_bar = total == 0 and state_value in ("queued", "fetching")
+
+    progress_bar = (
+        "<div class='bg-gradient-to-r from-blue-500 to-green-500 h-2 animate-pulse w-full'></div>"
+        if indeterminate_bar
+        else f"<div class='bg-gradient-to-r from-blue-500 to-green-500 h-2 transition-all duration-500' style='width: {percent}%'></div>"
+    )
+
     content = f"""
     <div
         id="playlist-status-{playlist_id}"
         data-state="{state_value}"
-        hx-get="/playlists/{playlist_id}/status"
-        hx-trigger="{trigger}"
+        hx-get="/playlists/{playlist_id}/status"{trigger_attr}
         hx-swap="outerHTML"
         hx-on::afterSwap="
             const btn = this.closest('li')?.querySelector('button');
@@ -450,13 +540,19 @@ async def playlist_status_fragment(playlist_id: int):
         class="text-xs text-gray-700 space-y-1"
     >
         <div class="flex items-center space-x-2">
-            <span class="px-2 py-0.5 rounded-full text-white text-[10px] {'bg-blue-600' if state_value in ('queued','fetching') else 'bg-green-600' if state_value == 'ready' else 'bg-red-600' if state_value == 'error' else 'bg-gray-500'}">{state_value}</span>
-            <span>{message}</span>
+            <span class="px-2 py-0.5 rounded-full text-white text-[10px] {'bg-blue-600' if state_value in ('queued','fetching') else 'bg-green-600' if state_value == 'ready' else 'bg-red-600' if state_value == 'error' else 'bg-gray-500'}">
+                {state_value}
+            </span>
+            <span class="text-sm">{message}</span>
         </div>
         <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-            <div class="bg-green-500 h-2" style="width: {percent}%"></div>
+            {progress_bar}
         </div>
-        <div class="text-[10px] text-gray-600">{done}/{total} steps</div>
+        <div class="text-[11px] text-gray-700 flex items-center space-x-2">
+            <span class="font-mono">{done}/{total_display} steps</span>
+            {f'<span class="text-gray-500">{elapsed_text}</span>' if elapsed_text else ''}
+            {f'<span class="animate-pulse text-blue-700">syncing…</span>' if state_value in ('queued', 'fetching') else ''}
+        </div>
     </div>
     """
     return HTMLResponse(content)

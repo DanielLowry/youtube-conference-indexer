@@ -203,12 +203,6 @@
                     <ul
                         id="source-{{ source.id }}-playlists"
                         class="ml-4 mt-2 space-y-1 list-disc list-inside"
-                        hx-get="/sources/{{ source.id }}/playlists"
-                        hx-trigger="load delay:150ms"
-                        hx-target="this"
-                        hx-swap="innerHTML"
-                        hx-sync="this:abort"
-                        hx-queue="last"
                     >
                         {% for playlist in source.playlists %}
                             {% include "playlist-item.html" %}

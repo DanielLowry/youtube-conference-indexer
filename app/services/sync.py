@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app import crud, schemas, youtube, database
 from app import state
 
+logger = logging.getLogger(__name__)
+
 
 def queue_auto_sync(background_tasks: BackgroundTasks):
     """Schedule a sync if enough time has passed and not already running."""
@@ -37,6 +39,7 @@ def queue_auto_sync(background_tasks: BackgroundTasks):
         state.sync_steps_done = 0
         state.sync_steps_total = len(pinned_playlists)
         state.last_auto_sync_at = now
+        logger.info("Auto-sync scheduling %s pinned playlist(s)", len(pinned_playlists))
         for playlist in pinned_playlists:
             state.set_playlist_status(playlist.id, state="queued", total=0, done=0, message="Queued")
             background_tasks.add_task(sync_playlist_videos, playlist.id)
@@ -68,6 +71,7 @@ def sync_pinned_now():
         state.sync_message = "Sync started."
         state.sync_steps_done = 0
         state.sync_steps_total = len(pinned_playlists)
+        logger.info("Immediate sync of %s pinned playlist(s)", len(pinned_playlists))
         for playlist in pinned_playlists:
             state.set_playlist_status(playlist.id, state="queued", total=0, done=0, message="Queued")
             sync_playlist_videos(playlist.id)
@@ -91,7 +95,11 @@ def sync_playlist_videos(playlist_id: int):
         if current_status.get("state") == "cancelled":
             return
 
+        # Mark as fetching before network calls so the UI shows progress
+        logger.info("Sync start playlist_id=%s external_id=%s", playlist.id, playlist.external_id)
+        state.set_playlist_status(playlist.id, state="fetching", total=0, done=0, message="Fetching videos")
         videos_data = youtube.get_videos_for_playlist(playlist.external_id)
+        logger.info("Fetched playlist %s with %s video entries", playlist.external_id, len(videos_data))
         state.sync_steps_total += len(videos_data)
         state.set_playlist_status(playlist.id, state="fetching", total=len(videos_data), done=0, message="Fetching videos")
         new_count = 0
@@ -148,7 +156,7 @@ def sync_playlist_videos(playlist_id: int):
             done=len(videos_data),
             message=f"Synced {new_count} new videos",
         )
-        logging.info("Synced %s new videos for playlist %s", new_count, playlist.external_id)
+        logger.info("Synced %s new videos for playlist %s", new_count, playlist.external_id)
     except Exception as exc:  # noqa: BLE001
         logging.exception("Sync failed for playlist_id=%s", playlist_id)
         suggestion_text = ""
