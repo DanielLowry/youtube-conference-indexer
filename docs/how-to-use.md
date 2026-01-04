@@ -24,13 +24,14 @@ uv run uvicorn app.main:app --reload
 Open http://127.0.0.1:8000
 
 ## Workflow
-1) **Add sources**: Go to `/sources`, add a Channel ID or Playlist ID.
-2) **Discover playlists (channels only)**: Click “Discover Playlists” to fetch channel playlists.
-3) **Pin**: Click the star to pin playlists you care about.
-4) **Sync**: On the home page, click “Sync Pinned Playlists” (runs in background). Requires a valid API key.
-5) **Search**: Visit `/search` and type to search titles/descriptions (FTS).
-6) **Curation**: In search results, update status/notes/score; add/remove tags inline.
-7) **Export**: From the home page, download Markdown or CSV (optionally filtered by status via query string, e.g., `?status=queued`).
+1) **Add sources**: Go to `/sources`, add a Channel ID/handle/URL or Playlist ID. Channels auto-discover their playlists immediately—no extra click.
+2) **Pin**: Pin playlists you care about. Pinning does two things:
+   - Priority: pinned playlists are synced first, but all playlists are synced automatically in the background.
+   - Export scope: only pinned playlists are included in Markdown/CSV exports.
+3) **Auto-sync**: The app auto-queues all playlists on page load and every ~30 minutes (throttled). Progress bars appear per playlist; queued/fetching playlists poll automatically.
+4) **Search**: Visit `/search` and type to search titles/descriptions (FTS).
+5) **Curation**: In search results, update status/notes/score; add/remove tags inline.
+6) **Export**: From the home page, download Markdown or CSV (optionally filtered by status via query string, e.g., `?status=queued`). Exports use pinned playlists.
 
 ## Testing
 ```bash

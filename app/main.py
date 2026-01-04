@@ -99,7 +99,7 @@ async def read_root(request: Request, background_tasks: BackgroundTasks, db: Ses
     sync_service.queue_auto_sync(background_tasks)
     ctx = _home_context(db)
     ctx["request"] = request
-    return templates.TemplateResponse(request, "index.html", ctx)
+    return templates.TemplateResponse(request, "index.html", ctx, background=background_tasks)
 
 
 @app.get("/sync/status", response_class=HTMLResponse)
@@ -137,7 +137,7 @@ async def read_sources(request: Request, background_tasks: BackgroundTasks, db: 
     sync_service.queue_auto_sync(background_tasks)
     ctx = _home_context(db)
     ctx["request"] = request
-    return templates.TemplateResponse(request, "index.html", ctx)
+    return templates.TemplateResponse(request, "index.html", ctx, background=background_tasks)
 
 
 @app.post("/sources", response_class=RedirectResponse)
@@ -485,7 +485,7 @@ async def run_sync(background_tasks: BackgroundTasks, request: Request, db: Sess
     
         Sync started for {len(pinned_playlists)} pinned playlist(s). This may take a moment.
     </div>
-    """)
+    """, background=background_tasks)
 
 
 @app.get("/playlists/{playlist_id}/status", response_class=HTMLResponse)
@@ -514,10 +514,6 @@ async def playlist_status_fragment(playlist_id: int, db: Session = Depends(get_d
         message,
         started_at,
     )
-    if not pinned:
-        state_value = "not_pinned"
-        message = "Pin this playlist to sync."
-        trigger_attr = ""
     if state_value == "idle" and state.sync_in_progress:
         state_value = "fetching"
         trigger_attr = ' hx-trigger="every 2s"'

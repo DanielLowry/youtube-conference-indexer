@@ -64,7 +64,6 @@ def test_playlist_status_prefills_itemcount(client: TestClient, app_ctx, monkeyp
         resp = client.get(f"/playlists/{pl.id}/status")
         assert resp.status_code == 200
         assert "0/5" in resp.text
-        assert "Pin" in resp.text
     finally:
         session.close()
 

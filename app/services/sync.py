@@ -3,7 +3,7 @@ import logging
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
-from app import crud, schemas, youtube, database
+from app import crud, schemas, youtube, database, models
 from app import state
 
 logger = logging.getLogger(__name__)
@@ -14,34 +14,63 @@ def queue_auto_sync(background_tasks: BackgroundTasks):
     from datetime import timedelta
 
     now = datetime.datetime.now(datetime.UTC)
+    logger.info("Auto-sync check started at %s", now.isoformat())
     if state.sync_in_progress:
-        return
-    if state.last_auto_sync_at and now - state.last_auto_sync_at < timedelta(minutes=state.AUTO_SYNC_INTERVAL_MINUTES):
+        logger.info("Auto-sync skipped: sync already in progress")
         return
 
     db = database.SessionLocal()
     try:
-        pinned_playlists = crud.get_pinned_playlists(db)
-        if not pinned_playlists:
+        playlists = (
+            db.query(models.Playlist)
+            .order_by(models.Playlist.pinned.desc(), models.Playlist.id.asc())
+            .all()
+        )
+        if not playlists:
+            logger.info("Auto-sync skipped: no playlists found")
             state.last_auto_sync_at = now
             state.last_sync_started_at = now
             state.last_sync_completed_at = now
-            state.sync_message = "No pinned playlists to sync."
+            state.sync_message = "No playlists to sync."
             state.sync_steps_done = 0
             state.sync_steps_total = 0
             return
+        has_never_synced = any(pl.last_synced_at is None for pl in playlists)
+        if (
+            state.last_auto_sync_at
+            and now - state.last_auto_sync_at < timedelta(minutes=state.AUTO_SYNC_INTERVAL_MINUTES)
+            and not has_never_synced
+        ):
+            logger.info(
+                "Auto-sync skipped: throttled (last run at %s) and no new playlists since then",
+                state.last_auto_sync_at,
+            )
+            return
         state.sync_error_message = None
         state.sync_in_progress = True
-        state.active_sync_jobs = len(pinned_playlists)
-        state.total_sync_jobs = len(pinned_playlists)
+        state.active_sync_jobs = len(playlists)
+        state.total_sync_jobs = len(playlists)
         state.last_sync_started_at = now
         state.sync_message = "Sync started."
         state.sync_steps_done = 0
-        state.sync_steps_total = len(pinned_playlists)
+        state.sync_steps_total = len(playlists)
         state.last_auto_sync_at = now
-        logger.info("Auto-sync scheduling %s pinned playlist(s)", len(pinned_playlists))
-        for playlist in pinned_playlists:
-            state.set_playlist_status(playlist.id, state="queued", total=0, done=0, message="Queued")
+        logger.info("Auto-sync scheduling %s playlist(s)", len(playlists))
+        for playlist in playlists:
+            current = state.get_playlist_status(playlist.id)
+            logger.info(
+                "Queueing playlist for sync: id=%s title=%s pinned=%s",
+                playlist.id,
+                playlist.title,
+                playlist.pinned,
+            )
+            state.set_playlist_status(
+                playlist.id,
+                state="queued",
+                total=current.get("total", 0),
+                done=0,
+                message="Queued (pinned)" if playlist.pinned else "Queued",
+            )
             background_tasks.add_task(sync_playlist_videos, playlist.id)
     finally:
         db.close()
@@ -51,29 +80,46 @@ def sync_pinned_now():
     """Force a sync of all pinned playlists (used before exports)."""
     db = database.SessionLocal()
     try:
-        pinned_playlists = crud.get_pinned_playlists(db)
-        if not pinned_playlists:
+        playlists = (
+            db.query(models.Playlist)
+            .order_by(models.Playlist.pinned.desc(), models.Playlist.id.asc())
+            .all()
+        )
+        if not playlists:
             now = datetime.datetime.now(datetime.UTC)
             state.last_sync_started_at = now
             state.last_sync_completed_at = now
             state.sync_in_progress = False
             state.active_sync_jobs = 0
             state.total_sync_jobs = 0
-            state.sync_message = "No pinned playlists to sync."
+            state.sync_message = "No playlists to sync."
             state.sync_steps_done = 0
             state.sync_steps_total = 0
             return
         state.sync_error_message = None
         state.sync_in_progress = True
-        state.active_sync_jobs = len(pinned_playlists)
-        state.total_sync_jobs = len(pinned_playlists)
+        state.active_sync_jobs = len(playlists)
+        state.total_sync_jobs = len(playlists)
         state.last_sync_started_at = datetime.datetime.now(datetime.UTC)
         state.sync_message = "Sync started."
         state.sync_steps_done = 0
-        state.sync_steps_total = len(pinned_playlists)
-        logger.info("Immediate sync of %s pinned playlist(s)", len(pinned_playlists))
-        for playlist in pinned_playlists:
-            state.set_playlist_status(playlist.id, state="queued", total=0, done=0, message="Queued")
+        state.sync_steps_total = len(playlists)
+        logger.info("Immediate sync of %s playlist(s)", len(playlists))
+        for playlist in playlists:
+            current = state.get_playlist_status(playlist.id)
+            logger.info(
+                "Queueing playlist for sync: id=%s title=%s pinned=%s",
+                playlist.id,
+                playlist.title,
+                playlist.pinned,
+            )
+            state.set_playlist_status(
+                playlist.id,
+                state="queued",
+                total=current.get("total", 0),
+                done=0,
+                message="Queued (pinned)" if playlist.pinned else "Queued",
+            )
             sync_playlist_videos(playlist.id)
         state.last_auto_sync_at = datetime.datetime.now(datetime.UTC)
     finally:
@@ -97,9 +143,9 @@ def sync_playlist_videos(playlist_id: int):
 
         # Mark as fetching before network calls so the UI shows progress
         logger.info(
-            "Sync start playlist_id=%s title=%s external_id=%s",
-            playlist.id,
+            "Started syncing playlist '%s' (id=%s external_id=%s)",
             playlist.title,
+            playlist.id,
             playlist.external_id,
         )
         state.set_playlist_status(playlist.id, state="fetching", total=0, done=0, message="Fetching videos")
