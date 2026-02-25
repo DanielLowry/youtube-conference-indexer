@@ -190,7 +190,9 @@ def sync_playlist_videos(playlist_id: int):
                     item["snippet"]["publishedAt"].replace("Z", "+00:00")
                 ),
                 duration_seconds=item["contentDetails"]["duration_seconds"],
+                channel_id=item["snippet"].get("channelId"),
                 channel_title=item["snippet"]["channelTitle"],
+                fetched_at=datetime.datetime.now(datetime.UTC),
             )
             crud.create_video(db, video=video, playlist_id=playlist.id)
             new_count += 1
