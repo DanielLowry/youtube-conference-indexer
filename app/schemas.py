@@ -40,7 +40,9 @@ class VideoBase(BaseModel):
     description: Optional[str] = None
     published_at: datetime.datetime
     duration_seconds: int
+    channel_id: Optional[str] = None
     channel_title: str
+    fetched_at: Optional[datetime.datetime] = None
 
 
 class VideoCreate(VideoBase):
