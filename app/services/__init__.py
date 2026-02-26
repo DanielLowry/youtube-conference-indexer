@@ -7,7 +7,7 @@ Purpose:
 
 Implementation details:
 - Re-exports are intentionally explicit so static analysis and IDE tooling
-  can discover available contract types without scanning submodules.
+can discover available contract types without scanning submodules.
 """
 
 from .contracts import (  # noqa: F401
@@ -19,3 +19,5 @@ from .contracts import (  # noqa: F401
     RunStatus,
     VideoRecord,
 )
+from .extractors import resume_extraction, run_extraction  # noqa: F401
+from .run_state import RunStateStore  # noqa: F401
