@@ -1,5 +1,7 @@
 # YouTube Conference Indexer — How to Use
 
+See also: `docs/architecture-decisions.md` for design rationale and tradeoffs.
+
 ## Prereqs
 - Python 3.11+
 - `uv` installed (used for env + deps)
