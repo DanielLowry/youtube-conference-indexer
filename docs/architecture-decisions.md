@@ -156,9 +156,7 @@ Why:
 - Keeps failures local to business logic and I/O concerns.
 
 Current note:
-- Focused stateless contract/core tests are green.
-- Some legacy app-level tests may require separate stabilization as DB removal
-  proceeds.
+- Stateless contract/core/routes/CLI tests are green.
 
 ## 12) Revisit triggers
 

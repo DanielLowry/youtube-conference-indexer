@@ -40,7 +40,7 @@ async def test_submit_run_creates_checkpoint_and_redirects(monkeypatch, tmp_path
     async def _fake_background(run_id: str, root: str):
         queued.append((run_id, root))
 
-    monkeypatch.setattr(main_module, "_resume_job_background", _fake_background)
+    monkeypatch.setattr(main_module, "_run_job_background", _fake_background)
 
     async with _async_client() as client:
         response = await client.post(

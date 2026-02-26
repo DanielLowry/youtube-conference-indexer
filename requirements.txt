@@ -1,7 +1,5 @@
 fastapi
 uvicorn[standard]
-sqlalchemy
-alembic
 python-dotenv
 isodate
 jinja2

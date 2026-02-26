@@ -27,7 +27,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import youtube, state
 from .services.contracts import ExtractionMode, OutputFormat, RunConfig
-from .services.extractors import resume_extraction
+from .services.extractors import resume_extraction, run_extraction
 from .services.run_state import RunStateStore, build_run_id
 
 
@@ -218,6 +218,17 @@ async def _resume_job_background(run_id: str, output_root: str):
     await asyncio.to_thread(resume_extraction, run_id=run_id, output_root=output_root)
 
 
+async def _run_job_background(run_id: str, output_root: str):
+    """Background task wrapper for starting a newly submitted run.
+
+    The route pre-initializes `run_state.json` so the run appears in the UI
+    immediately. The actual extraction starts through `run_extraction(...)`.
+    """
+    store = RunStateStore(output_root=output_root)
+    config, _, _ = store.load_state(run_id)
+    await asyncio.to_thread(run_extraction, config=config)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     """Render stateless extraction dashboard."""
@@ -313,7 +324,7 @@ async def submit_run(
     store = RunStateStore(output_root=config.output_root)
     store.initialize_run(config)
     background_tasks.add_task(
-        _resume_job_background,
+        _run_job_background,
         run_id,
         config.output_root,
     )

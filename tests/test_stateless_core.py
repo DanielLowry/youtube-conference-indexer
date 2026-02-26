@@ -2,7 +2,7 @@
 
 Purpose:
 - Validate file-based run state persistence and output sinks.
-- Validate bounded search extraction behavior without database dependencies.
+- Validate bounded search/playlist/channel extraction behavior without database dependencies.
 - Validate resume behavior from saved checkpoint state.
 """
 
@@ -194,3 +194,138 @@ def test_resume_extraction_from_checkpoint(monkeypatch, tmp_path: Path):
     run_dir = tmp_path / seeded_result.run_id
     lines = (run_dir / "videos.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
+
+
+def test_run_extraction_playlist_mode(monkeypatch, tmp_path: Path):
+    """Playlist extraction should scan playlist pages and write deduped records."""
+
+    def fake_playlist_items_list(playlist_id: str, page_token: str | None = None, max_results: int = 50):
+        assert playlist_id == "PL123"
+        assert max_results == 50
+        if page_token is None:
+            return {
+                "items": [
+                    {"contentDetails": {"videoId": "VID1"}},
+                    {"contentDetails": {"videoId": "VID2"}},
+                ],
+                "nextPageToken": "page-2",
+            }
+        assert page_token == "page-2"
+        return {
+            "items": [
+                {"contentDetails": {"videoId": "VID2"}},
+                {"contentDetails": {"videoId": "VID3"}},
+            ],
+            "nextPageToken": None,
+        }
+
+    def fake_videos_list(video_ids):
+        return [
+            {
+                "id": video_id,
+                "snippet": {
+                    "title": f"Title {video_id}",
+                    "description": "Desc",
+                    "publishedAt": "2024-01-01T00:00:00Z",
+                    "channelId": "UCX",
+                    "channelTitle": "Chan",
+                },
+                "contentDetails": {"duration_seconds": 100},
+            }
+            for video_id in video_ids
+        ]
+
+    monkeypatch.setattr("app.services.extractors.youtube.playlist_items_list", fake_playlist_items_list)
+    monkeypatch.setattr("app.services.extractors.youtube.videos_list", fake_videos_list)
+
+    cfg = RunConfig(
+        mode=ExtractionMode.PLAYLIST,
+        playlist_id="PL123",
+        output_root=str(tmp_path),
+        max_pages=10,
+    )
+    result = run_extraction(cfg)
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.progress.pages_processed == 2
+    assert result.progress.results_seen == 4
+    assert result.progress.new_video_ids == 3
+    assert result.progress.existing_video_ids == 1
+    assert result.progress.videos_fetched == 3
+
+    run_dir = tmp_path / result.run_id
+    rows = [
+        json.loads(line)
+        for line in (run_dir / "videos.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    ]
+    assert len(rows) == 3
+    assert {row["source_playlist_id"] for row in rows} == {"PL123"}
+
+
+def test_run_extraction_channel_mode(monkeypatch, tmp_path: Path):
+    """Channel extraction should discover playlists and aggregate playlist scans."""
+
+    def fake_get_channel_playlists(channel_id: str):
+        assert channel_id == "UCCHAN"
+        return [{"id": "PLA"}, {"id": "PLB"}]
+
+    def fake_playlist_items_list(playlist_id: str, page_token: str | None = None, max_results: int = 50):
+        assert max_results == 50
+        assert page_token is None
+        if playlist_id == "PLA":
+            return {
+                "items": [{"contentDetails": {"videoId": "A1"}}],
+                "nextPageToken": None,
+            }
+        assert playlist_id == "PLB"
+        return {
+            "items": [
+                {"contentDetails": {"videoId": "B1"}},
+                {"contentDetails": {"videoId": "B2"}},
+            ],
+            "nextPageToken": None,
+        }
+
+    def fake_videos_list(video_ids):
+        return [
+            {
+                "id": video_id,
+                "snippet": {
+                    "title": f"Title {video_id}",
+                    "description": "Desc",
+                    "publishedAt": "2024-01-01T00:00:00Z",
+                    "channelId": "UCCHAN",
+                    "channelTitle": "Chan",
+                },
+                "contentDetails": {"duration_seconds": 90},
+            }
+            for video_id in video_ids
+        ]
+
+    monkeypatch.setattr("app.services.extractors.youtube.get_channel_playlists", fake_get_channel_playlists)
+    monkeypatch.setattr("app.services.extractors.youtube.playlist_items_list", fake_playlist_items_list)
+    monkeypatch.setattr("app.services.extractors.youtube.videos_list", fake_videos_list)
+
+    cfg = RunConfig(
+        mode=ExtractionMode.CHANNEL,
+        channel_id="UCCHAN",
+        output_root=str(tmp_path),
+        max_pages=10,
+    )
+    result = run_extraction(cfg)
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.progress.total_playlists == 2
+    assert result.progress.processed_playlists == 2
+    assert result.progress.current_playlist_id is None
+    assert result.progress.pages_processed == 2
+    assert result.progress.videos_fetched == 3
+
+    run_dir = tmp_path / result.run_id
+    rows = [
+        json.loads(line)
+        for line in (run_dir / "videos.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    ]
+    assert len(rows) == 3
+    assert {row["source_channel_id"] for row in rows} == {"UCCHAN"}
+    assert {row["source_playlist_id"] for row in rows} == {"PLA", "PLB"}
