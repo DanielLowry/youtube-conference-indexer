@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Legacy DB-centric source management was removed in stateless migration.")
+
 import re
 
 from fastapi.testclient import TestClient

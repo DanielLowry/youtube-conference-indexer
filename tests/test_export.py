@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Legacy DB-backed export routes were removed in stateless migration.")
+
 from fastapi.testclient import TestClient
 
 from app import crud, schemas

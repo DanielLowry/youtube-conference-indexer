@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.skip(reason="DB mode toggle no longer exists in stateless migration.")
+
 from fastapi.testclient import TestClient
 
 

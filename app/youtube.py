@@ -1,3 +1,17 @@
+"""YouTube Data API adapter helpers.
+
+Purpose:
+- Encapsulate all direct `googleapiclient` interactions for the application.
+- Provide small, testable wrapper functions used by extraction services.
+- Centralize retries/backoff and payload normalization concerns.
+
+Implementation details:
+- Functions in this module return raw API response fragments or normalized
+  dictionaries that service code can process without knowing API client details.
+- Transient error retries are implemented in `_execute_with_retries`.
+- Duration parsing is normalized to `duration_seconds` where useful.
+"""
+
 import datetime
 import time
 
@@ -222,7 +236,29 @@ def videos_list(video_ids: list[str]):
             item.setdefault("contentDetails", {})["duration_seconds"] = 0
     return items
 
+
+def playlist_items_list(
+    playlist_id: str,
+    page_token: str | None = None,
+    max_results: int = 50,
+):
+    """Fetch one playlistItems page (contentDetails only) with retries.
+
+    This wrapper is intentionally page-oriented so extractor services can
+    checkpoint page tokens and resume runs without replaying full playlists.
+    """
+    yt = get_youtube_service()
+    request = yt.playlistItems().list(
+        part="contentDetails",
+        playlistId=playlist_id,
+        maxResults=max_results,
+        pageToken=page_token,
+    )
+    return _execute_with_retries(request)
+
+
 def get_channel_playlists(channel_id: str):
+    """Return all playlists for a channel (eagerly loaded)."""
     youtube = get_youtube_service()
     playlists = []
     next_page_token = None
@@ -233,30 +269,35 @@ def get_channel_playlists(channel_id: str):
             maxResults=50,
             pageToken=next_page_token
         )
-        response = request.execute()
+        response = _execute_with_retries(request)
         playlists.extend(response.get('items', []))
         next_page_token = response.get('nextPageToken')
         if not next_page_token:
             break
     return playlists
 
+
 def _video_ids_from_playlist_items(items):
+    """Extract `videoId` values from playlistItems payloads."""
     return [item['contentDetails']['videoId'] for item in items]
 
 def get_videos_for_playlist(playlist_id: str):
+    """Fetch full video metadata for all IDs in a playlist.
+
+    This is kept for legacy paths. New stateless extractors generally use the
+    page-based wrappers (`playlist_items_list` + `videos_list`) directly.
+    """
     youtube = get_youtube_service()
     
     # Get all video IDs from the playlist
     video_ids = []
     next_page_token = None
     while True:
-        request = youtube.playlistItems().list(
-            part="contentDetails",
-            playlistId=playlist_id,
-            maxResults=50,
-            pageToken=next_page_token
+        response = playlist_items_list(
+            playlist_id=playlist_id,
+            page_token=next_page_token,
+            max_results=50,
         )
-        response = request.execute()
         video_ids.extend(_video_ids_from_playlist_items(response.get('items', [])))
         next_page_token = response.get('nextPageToken')
         if not next_page_token:

@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Legacy DB-backed status/tag workflows were removed in stateless migration.")
+
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient

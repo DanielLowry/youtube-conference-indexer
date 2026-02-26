@@ -1,41 +1,47 @@
-import sys
+"""API key route tests for the stateless FastAPI adapter."""
 
-from fastapi.testclient import TestClient
+import pytest
+from httpx import ASGITransport, AsyncClient
 
-from tests.conftest import _MODULES_TO_CLEAR
-
-
-def test_app_starts_without_api_key(monkeypatch, tmp_path):
-    """App should render home without crashing when no API key is set."""
-    for module in _MODULES_TO_CLEAR:
-        sys.modules.pop(module, None)
-    monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-
-    from app import main as main_module  # noqa: WPS433
-
-    # ensure no key is present after import (env file might carry a value locally)
-    main_module.youtube.set_api_key("")
-
-    client = TestClient(main_module.app)
-    resp = client.get("/")
-    assert resp.status_code == 200
-    assert "No valid YouTube API key configured" in resp.text
+from app import main as main_module
 
 
-def test_api_key_validation_success(client: TestClient, monkeypatch):
-    monkeypatch.setattr("app.main.youtube.validate_api_key", lambda: (True, "Key OK"))
-    resp = client.post("/api-key", data={"key": "abc"}, follow_redirects=True)
-    assert resp.status_code == 200
-    assert "Key OK" in resp.text
-    assert "API key status" in resp.text
+@pytest.mark.anyio
+async def test_home_shows_missing_api_key_warning(monkeypatch):
+    monkeypatch.setattr(main_module.youtube, "get_api_key", lambda: "")
+    monkeypatch.setattr(main_module.youtube, "has_valid_key", lambda: False)
+
+    async with _async_client() as client:
+        response = await client.get("/")
+
+    assert response.status_code == 200
+    assert "No valid YouTube API key configured" in response.text
 
 
-def test_api_key_validation_failure(client: TestClient, monkeypatch):
-    def _fail():
-        return False, "Bad key"
+@pytest.mark.anyio
+async def test_api_key_validation_success(monkeypatch):
+    monkeypatch.setattr(main_module.youtube, "validate_api_key", lambda: (True, "Key OK"))
 
-    monkeypatch.setattr("app.main.youtube.validate_api_key", _fail)
-    resp = client.post("/api-key", data={"key": "bad-key"})
-    assert resp.status_code == 400
-    assert "Bad key" in resp.text
+    async with _async_client() as client:
+        response = await client.post("/api-key", data={"key": "abc"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert "Key OK" in response.text
+    assert "API key status" in response.text
+
+
+@pytest.mark.anyio
+async def test_api_key_validation_failure(monkeypatch):
+    monkeypatch.setattr(main_module.youtube, "validate_api_key", lambda: (False, "Bad key"))
+
+    async with _async_client() as client:
+        response = await client.post("/api-key", data={"key": "bad-key"})
+
+    assert response.status_code == 400
+    assert "Bad key" in response.text
+
+
+def _async_client() -> AsyncClient:
+    """Build an AsyncClient backed by the FastAPI ASGI app."""
+    transport = ASGITransport(app=main_module.app)
+    return AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=False)

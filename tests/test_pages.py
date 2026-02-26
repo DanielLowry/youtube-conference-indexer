@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Legacy DB-centric pages were removed in stateless migration.")
+
 from fastapi.testclient import TestClient
 
 

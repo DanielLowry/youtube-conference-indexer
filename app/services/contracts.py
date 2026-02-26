@@ -151,7 +151,14 @@ class VideoRecord(BaseModel):
 
 
 class RunProgress(BaseModel):
-    """Mutable counters and checkpoint values collected during extraction."""
+    """Mutable counters and checkpoint values collected during extraction.
+
+    Notes:
+    - `next_page_token` tracks the pagination checkpoint for the *current*
+      source scan (search page or playlistItems page).
+    - Channel mode adds playlist-level checkpoint fields so resume can continue
+      from the correct playlist and page token.
+    """
 
     pages_processed: int = 0
     results_seen: int = 0
@@ -160,6 +167,10 @@ class RunProgress(BaseModel):
     videos_fetched: int = 0
     quota_estimate: int = 0
     next_page_token: str | None = None
+    total_playlists: int = 0
+    processed_playlists: int = 0
+    current_playlist_index: int = 0
+    current_playlist_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

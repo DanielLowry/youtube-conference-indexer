@@ -6,9 +6,9 @@
 <div class="mb-4 p-4 bg-white rounded shadow text-sm text-gray-800">
     <p class="font-semibold mb-1">Why you need this</p>
     <ul class="list-disc list-inside space-y-1">
-        <li>Required to discover playlists and sync videos from YouTube.</li>
+        <li>Required to run playlist, channel, or search extraction jobs against YouTube.</li>
         <li>We perform a lightweight validation when you save the key.</li>
-        <li>Without a key, only existing local data is usable; new discovery/sync will fail.</li>
+        <li>Without a key, new extraction runs cannot fetch YouTube metadata.</li>
     </ul>
 </div>
 
@@ -19,7 +19,7 @@
 {% endif %}
 {% if not api_key_valid %}
 <div class="mb-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">
-    No valid YouTube API key configured. Provide one below to enable discovery/sync.
+    No valid YouTube API key configured. Provide one below to enable extraction runs.
 </div>
 {% endif %}
 

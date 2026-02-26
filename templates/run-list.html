@@ -1,0 +1,9 @@
+{% if runs %}
+<div class="space-y-3">
+    {% for run in runs %}
+        {% include "run-status.html" %}
+    {% endfor %}
+</div>
+{% else %}
+<p class="text-sm text-gray-600">No extraction runs yet.</p>
+{% endif %}

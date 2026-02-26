@@ -77,6 +77,7 @@ class RunStateStore:
             output_files=output_files,
         )
         self.write_state(config=config, result=result, seen_ids=set())
+        self.write_summary(result=result)
         return result
 
     def load_state(self, run_id: str) -> tuple[RunConfig, RunResult, set[str]]:

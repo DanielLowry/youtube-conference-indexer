@@ -1,210 +1,174 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1 class="text-2xl font-bold mb-4">YouTube Conference Indexer</h1>
+<h1 class="text-2xl font-bold mb-2">YouTube Metadata Extractor</h1>
+<p class="text-sm text-gray-700 mb-4">
+    Run playlist, channel, or bounded search extraction jobs and download output files from each run directory.
+</p>
 
-<div class="mb-4 p-4 bg-white rounded shadow">
-    <h2 class="text-lg font-semibold mb-2">How to use this app</h2>
-    <ol class="list-decimal list-inside space-y-1 text-sm text-gray-800">
-        <li>Set a valid YouTube API key on the <a class="underline font-semibold" href="/api-key">API Key page</a>.</li>
-        <li>Add sources below (channel names/handles/URLs are OK; we’ll resolve the ID).</li>
-        <li>For channel sources, click “Discover Playlists” and <span class="font-semibold">pin</span> the ones you care about.</li>
-        <li>Pinned playlists sync automatically every ~{{ AUTO_SYNC_INTERVAL_MINUTES }} minutes and immediately before exports.</li>
-        <li>Use <a class="underline font-semibold" href="/search">Search</a> to find videos (searches titles/descriptions of synced videos).</li>
-        <li>Update status/notes/tags on videos; use Export (CSV/Markdown) to download filtered lists (includes playlist and description). In-memory mode loses data on restart.</li>
-    </ol>
-    <p class="mt-2 text-sm text-gray-700">Tip: If you see no search results or empty exports, ensure playlists are pinned and a sync has completed.</p>
-</div>
-
-<div id="sync-status" class="text-sm text-gray-700 mb-2" hx-get="/sync/status" hx-trigger="load, every 3s" hx-swap="innerHTML">
-    Sync runs automatically every ~{{ AUTO_SYNC_INTERVAL_MINUTES }} minutes and before exports.
-</div>
-
-{% if db_state and db_state.mode == "memory" %}
-<div class="mt-4 p-4 rounded bg-red-100 text-red-800 border border-red-300">
-    Running in NO-DB (in-memory) mode. Nothing will persist across restarts.
-</div>
-{% endif %}
 {% if api_key_status_message %}
-<div class="mt-4 p-4 rounded {{ 'bg-green-100 text-green-800 border border-green-300' if api_key_validation_ok else 'bg-red-100 text-red-800 border border-red-300' }}">
+<div class="mb-4 p-3 rounded {{ 'bg-green-100 text-green-800 border border-green-300' if api_key_validation_ok else 'bg-red-100 text-red-800 border border-red-300' }}">
     API key status: {{ api_key_status_message }}
-    {% if not api_key_validation_ok %}
-        <span class="ml-2">Provide a new key on the <a href="/api-key" class="underline font-semibold">API Key page</a>.</span>
-    {% endif %}
 </div>
 {% endif %}
+
 {% if not api_key_valid %}
-<div class="mt-4 p-4 rounded bg-red-100 text-red-800 border border-red-300">
-    No valid YouTube API key configured. Provide one on the <a href="/api-key" class="underline font-semibold">API Key page</a>.
+<div class="mb-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">
+    No valid YouTube API key configured. Set one on the <a href="/api-key" class="underline font-semibold">API Key page</a>.
 </div>
 {% endif %}
-{% if db_health_ok is not none and not db_health_ok %}
-<div class="mt-4 p-4 rounded bg-red-100 text-red-800 border border-red-300">
-    Database issue detected: {{ db_health_error }}. Try <form class="inline" action="/db/reconnect" method="post"><button class="underline font-semibold">reconnect</button></form>
-    or switch to <form class="inline" action="/db/use-memory" method="post"><button class="underline font-semibold">in-memory mode</button></form>.
-</div>
-{% endif %}
-{% if sync_error_message %}
-<div class="mt-2 p-3 rounded bg-red-100 text-red-800 border border-red-300">
-    Sync error: {{ sync_error_message }}
-</div>
-{% endif %}
-
-<div class="mt-4 flex space-x-2">
-    <form action="/db/use-memory" method="post">
-        <button
-            type="submit"
-            class="inline-flex justify-center rounded-md border border-transparent bg-yellow-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2"
-        >Use In-Memory (No Persistence)</button>
-    </form>
-    <form action="/db/reconnect" method="post">
-        <button
-            type="submit"
-            class="inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        >Retry Database</button>
-    </form>
-</div>
-
-<div class="mt-6 flex space-x-2">
-    <a
-        href="/export/markdown?status=queued"
-        class="inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-    >Export Markdown (queued)</a>
-    <a
-        href="/export/csv?status=queued"
-        class="inline-flex justify-center rounded-md border border-transparent bg-gray-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-    >Export CSV (queued)</a>
-</div>
 
 {% if error_message %}
-<div class="mt-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">
+<div class="mb-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">
     {{ error_message }}
 </div>
 {% endif %}
 
-{% if channel_suggestions %}
-<div class="mt-4 p-4 rounded bg-blue-50 text-blue-900 border border-blue-200">
-    <div class="font-semibold mb-2">Did you mean one of these channels for "{{ suggestions_term }}"?</div>
-    <ul class="space-y-2">
-        {% for ch in channel_suggestions %}
-        <li class="flex items-center justify-between bg-white p-2 rounded shadow-sm">
-            <div>
-                <div class="font-semibold">{{ ch.title }}</div>
-                <div class="text-xs text-gray-600">ID: {{ ch.id }}</div>
-            </div>
-            <form action="/sources" method="post">
-                <input type="hidden" name="name" value="{{ ch.title }}">
-                <input type="hidden" name="type" value="channel">
-                <input type="hidden" name="external_id" value="{{ ch.id }}">
-                <button
-                    type="submit"
-                    class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-1 px-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                >
-                    Use this channel
-                </button>
-            </form>
-        </li>
-        {% endfor %}
-    </ul>
+{% if selected_run_id %}
+<div class="mb-4 p-3 rounded bg-blue-100 text-blue-900 border border-blue-300">
+    Submitted run: <span class="font-mono">{{ selected_run_id }}</span>
 </div>
 {% endif %}
 
-<div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-    <div class="bg-white p-4 rounded shadow">
-        <h2 class="text-xl font-bold mb-2">Add New Source</h2>
-        <form action="/sources" method="post" class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <section class="bg-white p-4 rounded shadow" x-data="{mode: 'search'}">
+        <h2 class="text-lg font-semibold mb-3">Start Extraction Run</h2>
+
+        <form action="/runs" method="post" class="space-y-3">
+            <div>
+                <label for="mode" class="block text-sm font-medium text-gray-700">Mode</label>
+                <select
+                    id="mode"
+                    name="mode"
+                    x-model="mode"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >
+                    <option value="search">Search</option>
+                    <option value="playlist">Playlist</option>
+                    <option value="channel">Channel</option>
+                </select>
+            </div>
+
+            <div x-show="mode === 'search'">
+                <label for="query" class="block text-sm font-medium text-gray-700">Search query</label>
+                <input
+                    id="query"
+                    name="query"
+                    type="text"
+                    placeholder="e.g. CppCon allocator"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                />
+            </div>
+
+            <div x-show="mode === 'playlist'">
+                <label for="playlist_id" class="block text-sm font-medium text-gray-700">Playlist ID</label>
+                <input
+                    id="playlist_id"
+                    name="playlist_id"
+                    type="text"
+                    placeholder="PL..."
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                />
+            </div>
+
+            <div x-show="mode === 'channel' || mode === 'search'">
+                <label for="channel_id" class="block text-sm font-medium text-gray-700">
+                    Channel ID <span class="text-gray-500">(required for channel mode, optional for search mode)</span>
+                </label>
+                <input
+                    id="channel_id"
+                    name="channel_id"
+                    type="text"
+                    placeholder="UC..."
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                />
+            </div>
+
+            <div x-show="mode === 'search'" class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                    <label for="name" class="block text-sm font-medium text-gray-700">Name</label>
-                    <input type="text" name="name" id="name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" required>
+                    <label for="published_after" class="block text-sm font-medium text-gray-700">Published after (UTC)</label>
+                    <input id="published_after" name="published_after" type="datetime-local" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
                 </div>
                 <div>
-                    <label for="type" class="block text-sm font-medium text-gray-700">Type</label>
-                    <select name="type" id="type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" required>
-                        <option value="channel">Channel</option>
-                        <option value="playlist">Playlist</option>
+                    <label for="published_before" class="block text-sm font-medium text-gray-700">Published before (UTC)</label>
+                    <input id="published_before" name="published_before" type="datetime-local" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                </div>
+                <div>
+                    <label for="video_duration" class="block text-sm font-medium text-gray-700">Video duration</label>
+                    <select id="video_duration" name="video_duration" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <option value="any">Any</option>
+                        <option value="short">Short</option>
+                        <option value="medium">Medium</option>
+                        <option value="long">Long</option>
                     </select>
                 </div>
                 <div>
-                    <label for="external_id" class="block text-sm font-medium text-gray-700">Channel/Playlist (name, handle, URL, or ID)</label>
-                    <input type="text" name="external_id" id="external_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" required>
+                    <label for="order_by" class="block text-sm font-medium text-gray-700">Order</label>
+                    <select id="order_by" name="order_by" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <option value="relevance">Relevance</option>
+                        <option value="date">Date</option>
+                        <option value="viewCount">View count</option>
+                        <option value="rating">Rating</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="region_code" class="block text-sm font-medium text-gray-700">Region code</label>
+                    <input id="region_code" name="region_code" type="text" maxlength="2" placeholder="US" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                </div>
+                <div>
+                    <label for="relevance_language" class="block text-sm font-medium text-gray-700">Relevance language</label>
+                    <input id="relevance_language" name="relevance_language" type="text" maxlength="5" placeholder="en" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                </div>
+                <div>
+                    <label for="safe_search" class="block text-sm font-medium text-gray-700">Safe search</label>
+                    <select id="safe_search" name="safe_search" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <option value="">Default</option>
+                        <option value="none">None</option>
+                        <option value="moderate">Moderate</option>
+                        <option value="strict">Strict</option>
+                    </select>
                 </div>
             </div>
-            <button type="submit" class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">Add Source</button>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label for="max_pages" class="block text-sm font-medium text-gray-700">Max pages (1-50)</label>
+                    <input id="max_pages" name="max_pages" type="number" min="1" max="50" value="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                </div>
+                <div>
+                    <label for="stop_after_empty_pages" class="block text-sm font-medium text-gray-700">Stop after empty pages</label>
+                    <input id="stop_after_empty_pages" name="stop_after_empty_pages" type="number" min="1" value="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                </div>
+            </div>
+
+            <fieldset>
+                <legend class="block text-sm font-medium text-gray-700">Output formats</legend>
+                <div class="mt-1 flex items-center gap-4 text-sm">
+                    <label class="inline-flex items-center gap-2">
+                        <input type="checkbox" name="output_formats" value="jsonl" checked />
+                        <span>JSONL</span>
+                    </label>
+                    <label class="inline-flex items-center gap-2">
+                        <input type="checkbox" name="output_formats" value="csv" checked />
+                        <span>CSV</span>
+                    </label>
+                </div>
+            </fieldset>
+
+            <button
+                type="submit"
+                class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            >
+                Start run
+            </button>
         </form>
-    </div>
+    </section>
 
-    <div class="bg-white p-4 rounded shadow">
-        <h2 class="text-xl font-bold mb-2">Sources & Playlists</h2>
-        <p class="text-sm text-gray-700 mb-2">Type to filter playlists, pin/unpin all, or discover playlists for channels.</p>
-        <ul id="source-list" class="space-y-4">
-            {% for source in sources %}
-            <li class="py-2 border-b">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <span class="font-bold">{{ source.name }}</span> ({{ source.type }}: {{ source.external_id }})
-                    </div>
-                <div class="flex items-center space-x-2">
-                    {% if source.type == 'channel' %}
-                    <button
-                        hx-get="/sources/{{ source.id }}/playlists?refresh=1"
-                        hx-target="#source-{{ source.id }}-playlists"
-                        hx-swap="innerHTML"
-                        hx-queue="last"
-                        hx-sync="this:abort"
-                        class="text-blue-600 hover:text-blue-900"
-                    >
-                        Refresh
-                    </button>
-                    {% endif %}
-                    <button
-                        hx-delete="/sources/{{ source.id }}"
-                        hx-target="closest li"
-                        hx-swap="outerHTML"
-                            class="text-red-600 hover:text-red-900"
-                        >
-                            Delete
-                        </button>
-                    </div>
-                </div>
-                <div class="mt-2" x-data="{filter: ''}">
-                    <div class="flex items-center space-x-2 mb-2">
-                        <input
-                            type="search"
-                            x-model="filter"
-                            placeholder="Filter playlists..."
-                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        />
-                        <button
-                            hx-post="/sources/{{ source.id }}/playlists/pin_all"
-                            hx-vals='{"action":"pin"}'
-                            hx-target="#source-{{ source.id }}-playlists"
-                            hx-swap="innerHTML"
-                            class="text-xs px-2 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                        >Pin all</button>
-                        <button
-                            hx-post="/sources/{{ source.id }}/playlists/pin_all"
-                            hx-vals='{"action":"unpin"}'
-                            hx-target="#source-{{ source.id }}-playlists"
-                            hx-swap="innerHTML"
-                            class="text-xs px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600"
-                        >Unpin all</button>
-                    </div>
-                    <ul
-                        id="source-{{ source.id }}-playlists"
-                        class="ml-4 mt-2 space-y-1 list-disc list-inside"
-                    >
-                        {% for playlist in source.playlists %}
-                            {% include "playlist-item.html" %}
-                        {% endfor %}
-                    </ul>
-                </div>
-            </li>
-            {% endfor %}
-        </ul>
-    </div>
+    <section class="bg-white p-4 rounded shadow">
+        <h2 class="text-lg font-semibold mb-3">Runs</h2>
+        <div id="run-list" hx-get="/runs/list" hx-trigger="load, every 4s" hx-swap="innerHTML">
+            {% include "run-list.html" %}
+        </div>
+    </section>
 </div>
-
-<p class="mt-4 text-sm text-gray-600">Welcome to the indexer. The application is running.</p>
-
 {% endblock %}

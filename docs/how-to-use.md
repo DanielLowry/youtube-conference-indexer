@@ -1,10 +1,10 @@
-# YouTube Conference Indexer — How to Use
+# YouTube Metadata Extractor - How to Use
 
 See also: `docs/architecture-decisions.md` for design rationale and tradeoffs.
 
 ## Prereqs
 - Python 3.11+
-- `uv` installed (used for env + deps)
+- `uv` installed
 - YouTube Data API v3 key
 
 ## Setup
@@ -12,38 +12,61 @@ See also: `docs/architecture-decisions.md` for design rationale and tradeoffs.
 uv venv
 uv pip install -r requirements.txt
 ```
-You can start the app without an API key—the UI will show a warning and let you paste one on the **API Key** page. To set it upfront, create `.env` in the repo root (defaults to SQLite at `data/indexer.db`):
-```
-YOUTUBE_API_KEY=your_api_key_here
-DATABASE_URL=sqlite:///./data/indexer.db
-```
-The SQLite file and tables are created automatically on first run. If you don’t want persistence, you can skip setting `DATABASE_URL` and run in in-memory mode (see “DB-free mode” below).
 
-## Run the app
+Create `.env` in repo root:
+```dotenv
+YOUTUBE_API_KEY=your_api_key_here
+```
+
+## Run the web UI
 ```bash
 uv run uvicorn app.main:app --reload
 ```
-Open http://127.0.0.1:8000
 
-## Workflow
-1) **Add sources**: Go to `/sources`, add a Channel ID/handle/URL or Playlist ID. Channels auto-discover their playlists immediately—no extra click.
-2) **Pin**: Pin playlists you care about. Pinning does two things:
-   - Priority: pinned playlists are synced first, but all playlists are synced automatically in the background.
-   - Export scope: only pinned playlists are included in Markdown/CSV exports.
-3) **Auto-sync**: The app auto-queues all playlists on page load and every ~30 minutes (throttled). Progress bars appear per playlist; queued/fetching playlists poll automatically.
-4) **Search**: Visit `/search` and type to search titles/descriptions (FTS).
-5) **Curation**: In search results, update status/notes/score; add/remove tags inline.
-6) **Export**: From the home page, download Markdown or CSV (optionally filtered by status via query string, e.g., `?status=queued`). Exports use pinned playlists.
+Open http://127.0.0.1:8000.
+
+### UI workflow
+1. Set or validate your API key on `/api-key`.
+2. On `/`, submit a run in one mode:
+   - `search` (query + optional filters)
+   - `playlist` (playlist ID)
+   - `channel` (channel ID)
+3. Monitor run status cards (auto-refresh every few seconds).
+4. Download `videos.jsonl` and/or `videos.csv` from the run card.
+
+## Run from CLI
+The CLI uses the same service contracts as the web adapter.
+
+### Start a run
+```bash
+uv run python -m app.cli run --mode search --query "cppcon allocator" --max-pages 10
+```
+
+Examples:
+```bash
+uv run python -m app.cli run --mode playlist --playlist-id PL123 --output-format jsonl --output-format csv
+uv run python -m app.cli run --mode channel --channel-id UC123 --max-pages 20
+```
+
+### Resume a run
+```bash
+uv run python -m app.cli resume <run_id>
+```
+
+## Output structure
+Each run writes to `./runs/<run_id>/`:
+- `videos.jsonl` (if requested)
+- `videos.csv` (if requested)
+- `run_state.json` (full checkpoint + dedupe state)
+- `summary.json` (compact progress/status)
 
 ## Testing
+Run all tests:
 ```bash
 uv run pytest
 ```
-CI mirrors this on GitHub Actions (Linux). Tests stub YouTube calls; no network needed.
 
-## Notes
-- If using a custom DB location, set `DATABASE_URL` accordingly. For SQLite, the file is created automatically.
-- Alembic is configured; current schema is up to date with the code. If you change models, add a migration before deployment.
-- DB options:
-  - SQLite (default): persistent file at `data/indexer.db` (or your `DATABASE_URL`). No extra setup; it’s created automatically.
-  - DB-free mode: If the configured DB is unavailable, the app falls back to in-memory (you’ll see a red warning on the home page). You can also switch to in-memory or retry the configured DB via the buttons on the home page. In-memory mode is ephemeral—nothing persists across restarts.
+Focused stateless suites:
+```bash
+uv run pytest tests/test_extraction_contracts.py tests/test_stateless_core.py tests/test_stateless_routes.py tests/test_cli.py
+```
