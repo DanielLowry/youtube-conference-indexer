@@ -8,12 +8,13 @@ Purpose:
 
 import datetime
 import json
+import csv
 from pathlib import Path
 
 from app.services.contracts import ExtractionMode, OutputFormat, RunConfig, RunStatus, VideoRecord
 from app.services.extractors import resume_extraction, run_extraction
 from app.services.run_state import RunStateStore
-from app.services.sinks import create_sinks
+from app.services.sinks import CSV_FIELDNAMES, create_sinks
 
 
 def test_run_state_store_roundtrip(tmp_path: Path):
@@ -74,6 +75,43 @@ def test_sinks_write_jsonl_and_csv(tmp_path: Path):
     assert len(csv_lines) == 2
     assert "external_id" in csv_lines[0]
     assert "VID100" in csv_lines[1]
+
+
+def test_sinks_jsonl_csv_schema_consistency(tmp_path: Path):
+    """JSONL payload keys and CSV headers should stay aligned and stable."""
+    sink = create_sinks(
+        output_dir=str(tmp_path),
+        output_formats=[OutputFormat.JSONL, OutputFormat.CSV],
+    )
+    sink.write_record(
+        VideoRecord(
+            external_id="VID200",
+            title="Schema check",
+            description="Desc",
+            published_at=datetime.datetime(2025, 2, 1, tzinfo=datetime.UTC),
+            duration_seconds=222,
+            channel_id="UC200",
+            channel_title="Schema Channel",
+            source_playlist_id="PL200",
+            source_channel_id="UC200",
+            source_query="schema",
+            rank_in_run=2,
+            page_number=3,
+        )
+    )
+    sink.close()
+
+    jsonl_payload = json.loads((tmp_path / "videos.jsonl").read_text(encoding="utf-8").strip())
+    with (tmp_path / "videos.csv").open(encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        csv_row = next(reader)
+        csv_headers = reader.fieldnames
+
+    assert csv_headers == CSV_FIELDNAMES
+    assert list(csv_row.keys()) == CSV_FIELDNAMES
+    assert set(CSV_FIELDNAMES).issubset(set(jsonl_payload.keys()))
+    assert csv_row["external_id"] == jsonl_payload["external_id"] == "VID200"
+    assert csv_row["channel_title"] == jsonl_payload["channel_title"] == "Schema Channel"
 
 
 def test_run_extraction_search_writes_outputs(monkeypatch, tmp_path: Path):
@@ -194,6 +232,128 @@ def test_resume_extraction_from_checkpoint(monkeypatch, tmp_path: Path):
     run_dir = tmp_path / seeded_result.run_id
     lines = (run_dir / "videos.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
+
+
+def test_run_extraction_failure_persists_error_summary(monkeypatch, tmp_path: Path):
+    """Failures should mark run failed and persist error details to summary/state."""
+
+    def _raise_search_error(**kwargs):
+        raise RuntimeError("quota exhausted")
+
+    monkeypatch.setattr("app.services.extractors.youtube.search_list", _raise_search_error)
+
+    cfg = RunConfig(
+        mode=ExtractionMode.SEARCH,
+        query="failure-case",
+        output_root=str(tmp_path),
+    )
+    result = run_extraction(cfg)
+
+    assert result.status == RunStatus.FAILED
+    assert result.error_message == "quota exhausted"
+    assert result.finished_at is not None
+
+    run_dir = tmp_path / result.run_id
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    state_payload = json.loads((run_dir / "run_state.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "failed"
+    assert summary["error_message"] == "quota exhausted"
+    assert summary["finished_at"] is not None
+    assert state_payload["result"]["status"] == "failed"
+    assert state_payload["result"]["error_message"] == "quota exhausted"
+
+
+def test_quota_summary_is_recorded_for_search(monkeypatch, tmp_path: Path):
+    """Quota estimate should be reflected in both result and summary.json."""
+
+    def fake_search_list(**kwargs):
+        return {
+            "items": [
+                {"id": {"videoId": "VIDQ1"}},
+                {"id": {"videoId": "VIDQ2"}},
+            ],
+            "nextPageToken": None,
+        }
+
+    def fake_videos_list(video_ids):
+        return [
+            {
+                "id": video_id,
+                "snippet": {
+                    "title": f"Title {video_id}",
+                    "description": "Desc",
+                    "publishedAt": "2024-01-01T00:00:00Z",
+                    "channelId": "UCQ",
+                    "channelTitle": "Quota Channel",
+                },
+                "contentDetails": {"duration_seconds": 60},
+            }
+            for video_id in video_ids
+        ]
+
+    monkeypatch.setattr("app.services.extractors.youtube.search_list", fake_search_list)
+    monkeypatch.setattr("app.services.extractors.youtube.videos_list", fake_videos_list)
+
+    cfg = RunConfig(mode=ExtractionMode.SEARCH, query="quota-case", output_root=str(tmp_path))
+    result = run_extraction(cfg)
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.progress.quota_estimate == 101
+
+    summary = json.loads((tmp_path / result.run_id / "summary.json").read_text(encoding="utf-8"))
+    assert summary["progress"]["quota_estimate"] == 101
+
+
+def test_resume_skips_work_for_succeeded_run(monkeypatch, tmp_path: Path):
+    """Resuming a succeeded run should return immediately without API calls."""
+    cfg = RunConfig(
+        mode=ExtractionMode.SEARCH,
+        query="already-done",
+        output_root=str(tmp_path),
+    )
+    store = RunStateStore(output_root=str(tmp_path))
+    result = store.initialize_run(cfg)
+    result.status = RunStatus.SUCCEEDED
+    result.progress.pages_processed = 3
+    store.write_state(config=cfg, result=result, seen_ids={"VID1"})
+    store.write_summary(result=result)
+
+    def _unexpected_call(**kwargs):  # pragma: no cover - defensive check
+        raise AssertionError("search_list should not be called for succeeded run")
+
+    monkeypatch.setattr("app.services.extractors.youtube.search_list", _unexpected_call)
+    resumed = resume_extraction(run_id=result.run_id, output_root=str(tmp_path))
+
+    assert resumed.status == RunStatus.SUCCEEDED
+    assert resumed.progress.pages_processed == 3
+
+
+def test_resume_with_expired_page_token_marks_run_failed(monkeypatch, tmp_path: Path):
+    """Expired/invalid resume tokens should fail cleanly with persisted error message."""
+    cfg = RunConfig(
+        mode=ExtractionMode.SEARCH,
+        query="resume-expired-token",
+        output_root=str(tmp_path),
+    )
+    store = RunStateStore(output_root=str(tmp_path))
+    result = store.initialize_run(cfg)
+    result.status = RunStatus.RUNNING
+    result.progress.pages_processed = 1
+    result.progress.next_page_token = "expired-token"
+    store.write_state(config=cfg, result=result, seen_ids={"VID1"})
+    store.write_summary(result=result)
+
+    def _raise_token_error(**kwargs):
+        raise RuntimeError("invalid page token")
+
+    monkeypatch.setattr("app.services.extractors.youtube.search_list", _raise_token_error)
+    resumed = resume_extraction(run_id=result.run_id, output_root=str(tmp_path))
+
+    assert resumed.status == RunStatus.FAILED
+    assert resumed.error_message == "invalid page token"
+
+    summary = json.loads((tmp_path / result.run_id / "summary.json").read_text(encoding="utf-8"))
+    assert summary["status"] == "failed"
+    assert summary["error_message"] == "invalid page token"
 
 
 def test_run_extraction_playlist_mode(monkeypatch, tmp_path: Path):
