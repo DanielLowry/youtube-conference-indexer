@@ -101,6 +101,22 @@ def _parse_output_formats(values: list[str] | None) -> list[OutputFormat]:
     return formats or [OutputFormat.JSONL, OutputFormat.CSV]
 
 
+def _parse_multi_inputs(value: str | None) -> list[str]:
+    """Parse comma/newline separated inputs into an ordered unique list."""
+    if not value:
+        return []
+    tokens = value.replace("\n", ",").split(",")
+    parsed: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        normalized = token.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        parsed.append(normalized)
+    return parsed
+
+
 def _resolve_output_root(output_root: str | None = None) -> str:
     """Resolve output root with runtime default fallback.
 
@@ -170,6 +186,9 @@ def _normalize_run_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "total_playlists": progress.get("total_playlists", 0),
             "processed_playlists": progress.get("processed_playlists", 0),
             "current_playlist_id": progress.get("current_playlist_id"),
+            "total_queries": progress.get("total_queries", 0),
+            "processed_queries": progress.get("processed_queries", 0),
+            "current_query": progress.get("current_query"),
         },
     }
     run_dir = Path(output_dir) if output_dir else None
@@ -296,10 +315,14 @@ async def submit_run(
     """Create a run config, initialize checkpoint files, and queue background run."""
     try:
         extraction_mode = ExtractionMode(mode)
+        parsed_queries = _parse_multi_inputs(query)
+        parsed_playlist_ids = _parse_multi_inputs(playlist_id)
         config = RunConfig(
             mode=extraction_mode,
-            query=(query or "").strip() or None,
-            playlist_id=(playlist_id or "").strip() or None,
+            query=parsed_queries[0] if parsed_queries else None,
+            queries=parsed_queries,
+            playlist_id=parsed_playlist_ids[0] if parsed_playlist_ids else None,
+            playlist_ids=parsed_playlist_ids,
             channel_id=(channel_id or "").strip() or None,
             published_after=_parse_optional_datetime(published_after),
             published_before=_parse_optional_datetime(published_before),

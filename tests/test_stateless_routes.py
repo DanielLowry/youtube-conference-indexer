@@ -7,6 +7,7 @@ Purpose:
 """
 
 import re
+import json
 from pathlib import Path
 
 import pytest
@@ -84,6 +85,36 @@ async def test_submit_run_rejects_invalid_config(monkeypatch, tmp_path: Path):
 
     assert response.status_code == 400
     assert "Invalid run configuration" in response.text
+
+
+@pytest.mark.anyio
+async def test_submit_run_parses_multiple_queries(monkeypatch, tmp_path: Path):
+    output_root = tmp_path / "runs"
+    _configure_test_app(monkeypatch, output_root)
+    queued: list[tuple[str, str]] = []
+
+    async def _fake_background(run_id: str, root: str):
+        queued.append((run_id, root))
+
+    monkeypatch.setattr(main_module, "_run_job_background", _fake_background)
+
+    async with _async_client() as client:
+        response = await client.post(
+            "/runs",
+            data={
+                "mode": "search",
+                "query": "allocator,\npolymorphic memory resource, allocator",
+            },
+        )
+
+    assert response.status_code == 303
+    location = response.headers["location"]
+    run_id_match = re.search(r"run_id=([^&]+)", location)
+    assert run_id_match is not None
+    run_id = run_id_match.group(1)
+    state_payload = json.loads((output_root / run_id / "run_state.json").read_text(encoding="utf-8"))
+    assert state_payload["config"]["queries"] == ["allocator", "polymorphic memory resource"]
+    assert queued == [(run_id, str(output_root))]
 
 
 @pytest.mark.anyio

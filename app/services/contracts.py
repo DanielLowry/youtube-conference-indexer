@@ -27,7 +27,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-# Global hard limit to prevent unbounded search pagination and quota usage.
+# Hard per-source page limit to prevent unbounded pagination and quota usage.
 MAX_PAGES_HARD_CAP = 50
 
 
@@ -76,8 +76,10 @@ class RunConfig(BaseModel):
 
     # source selectors
     playlist_id: str | None = None
+    playlist_ids: list[str] = Field(default_factory=list)
     channel_id: str | None = None
     query: str | None = None
+    queries: list[str] = Field(default_factory=list)
 
     # common controls
     dedupe_within_run: bool = True
@@ -97,12 +99,23 @@ class RunConfig(BaseModel):
 
     @property
     def max_results(self) -> int:
-        """Derived result budget based on capped page count.
+        """Derived per-source result budget based on capped page count.
 
         Each page can return up to 50 search results. This property provides
-        an explicit upper bound that downstream logic can log or enforce.
+        an explicit per-query/per-playlist upper bound that downstream logic
+        can log or enforce.
         """
         return self.max_pages * 50
+
+    @property
+    def resolved_playlist_ids(self) -> list[str]:
+        """Return deduplicated playlist inputs in submission order."""
+        return list(self.playlist_ids)
+
+    @property
+    def resolved_queries(self) -> list[str]:
+        """Return deduplicated search query inputs in submission order."""
+        return list(self.queries)
 
     @model_validator(mode="after")
     def validate_mode_requirements(self):
@@ -114,9 +127,14 @@ class RunConfig(BaseModel):
         - `channel` mode requires `channel_id`
         - `published_after` must not be later than `published_before`
         """
-        if self.mode == ExtractionMode.SEARCH and not self.query:
+        self.playlist_ids = _dedupe_non_empty([self.playlist_id, *self.playlist_ids])
+        self.queries = _dedupe_non_empty([self.query, *self.queries])
+        self.playlist_id = self.playlist_ids[0] if self.playlist_ids else None
+        self.query = self.queries[0] if self.queries else None
+
+        if self.mode == ExtractionMode.SEARCH and not self.queries:
             raise ValueError("query is required for search mode")
-        if self.mode == ExtractionMode.PLAYLIST and not self.playlist_id:
+        if self.mode == ExtractionMode.PLAYLIST and not self.playlist_ids:
             raise ValueError("playlist_id is required for playlist mode")
         if self.mode == ExtractionMode.CHANNEL and not self.channel_id:
             raise ValueError("channel_id is required for channel mode")
@@ -167,10 +185,15 @@ class RunProgress(BaseModel):
     videos_fetched: int = 0
     quota_estimate: int = 0
     next_page_token: str | None = None
+    current_item_pages_processed: int = 0
     total_playlists: int = 0
     processed_playlists: int = 0
     current_playlist_index: int = 0
     current_playlist_id: str | None = None
+    total_queries: int = 0
+    processed_queries: int = 0
+    current_query_index: int = 0
+    current_query: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -193,3 +216,16 @@ class RunResult(BaseModel):
     error_message: str | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+
+def _dedupe_non_empty(values: list[str | None]) -> list[str]:
+    """Return stripped, deduplicated string values while preserving order."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        value = (raw or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized

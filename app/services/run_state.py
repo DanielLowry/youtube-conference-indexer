@@ -35,7 +35,13 @@ def build_run_id(config: RunConfig) -> str:
     - short hash: avoids path collisions for repeated similar runs
     """
     now_token = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
-    source_token = config.query or config.playlist_id or config.channel_id or "run"
+    if config.mode.value == "search":
+        source_token = "|".join(config.resolved_queries)
+    elif config.mode.value == "playlist":
+        source_token = "|".join(config.resolved_playlist_ids)
+    else:
+        source_token = config.channel_id or "run"
+    source_token = source_token or "run"
     digest = hashlib.sha1(source_token.encode("utf-8")).hexdigest()[:8]
     return f"{now_token}-{config.mode.value}-{digest}"
 

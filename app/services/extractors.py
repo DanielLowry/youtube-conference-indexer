@@ -89,52 +89,84 @@ def _execute_search(
     _mark_running(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
     sink = create_sinks(output_dir=result.output_dir, output_formats=config.output_formats)
     try:
-        page_number = result.progress.pages_processed
-        page_token = result.progress.next_page_token
-        consecutive_empty_pages = 0
+        queries = config.resolved_queries
+        if result.progress.total_queries == 0:
+            result.progress.total_queries = len(queries)
+        if not queries:
+            return _finalize_success(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
 
-        while page_number < config.max_pages:
-            response = youtube.search_list(
-                query=config.query or "",
-                channel_id=config.channel_id,
-                published_after=config.published_after,
-                published_before=config.published_before,
-                video_duration=config.video_duration,
-                order_by=config.order_by,
-                region_code=config.region_code,
-                relevance_language=config.relevance_language,
-                safe_search=config.safe_search,
-                page_token=page_token,
-                max_results=PER_PAGE_MAX_RESULTS,
-            )
-            result.progress.quota_estimate += 100
-
-            page_number += 1
-            result.progress.pages_processed = page_number
-            page_items = response.get("items", [])
-            page_video_ids = _extract_search_video_ids(page_items)
-
-            consecutive_empty_pages = _process_video_ids_for_page(
-                config=config,
-                result=result,
-                state_store=state_store,
-                seen_ids=seen_ids,
-                sink=sink,
-                page_video_ids=page_video_ids,
-                page_number=page_number,
-                source_playlist_id=None,
-                source_channel_id=config.channel_id,
-                consecutive_empty_pages=consecutive_empty_pages,
-            )
-
-            page_token = response.get("nextPageToken")
-            result.progress.next_page_token = page_token
+        start_index = min(result.progress.current_query_index, len(queries))
+        resume_query = result.progress.current_query
+        resume_page_token = result.progress.next_page_token
+        for query_index in range(start_index, len(queries)):
+            query = queries[query_index]
+            result.progress.current_query_index = query_index
+            result.progress.current_query = query
             _persist_checkpoint(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
 
-            if not page_token:
-                break
-            if consecutive_empty_pages >= config.stop_after_empty_pages:
-                break
+            page_token = None
+            item_pages_processed = 0
+            if (
+                query_index == start_index
+                and resume_page_token
+                and (not resume_query or resume_query == query)
+            ):
+                page_token = resume_page_token
+                item_pages_processed = max(0, result.progress.current_item_pages_processed)
+
+            consecutive_empty_pages = 0
+            while item_pages_processed < config.max_pages:
+                response = youtube.search_list(
+                    query=query,
+                    channel_id=config.channel_id,
+                    published_after=config.published_after,
+                    published_before=config.published_before,
+                    video_duration=config.video_duration,
+                    order_by=config.order_by,
+                    region_code=config.region_code,
+                    relevance_language=config.relevance_language,
+                    safe_search=config.safe_search,
+                    page_token=page_token,
+                    max_results=PER_PAGE_MAX_RESULTS,
+                )
+                result.progress.quota_estimate += 100
+
+                result.progress.pages_processed += 1
+                item_pages_processed += 1
+                result.progress.current_item_pages_processed = item_pages_processed
+                page_number = result.progress.pages_processed
+                page_items = response.get("items", [])
+                page_video_ids = _extract_search_video_ids(page_items)
+
+                consecutive_empty_pages = _process_video_ids_for_page(
+                    config=config,
+                    result=result,
+                    state_store=state_store,
+                    seen_ids=seen_ids,
+                    sink=sink,
+                    page_video_ids=page_video_ids,
+                    page_number=page_number,
+                    source_playlist_id=None,
+                    source_channel_id=config.channel_id,
+                    source_query=query,
+                    consecutive_empty_pages=consecutive_empty_pages,
+                )
+
+                page_token = response.get("nextPageToken")
+                result.progress.next_page_token = page_token
+                _persist_checkpoint(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
+
+                if not page_token:
+                    break
+                if consecutive_empty_pages >= config.stop_after_empty_pages:
+                    break
+
+            result.progress.processed_queries = query_index + 1
+            result.progress.current_query_index = query_index + 1
+            result.progress.current_query = None
+            result.progress.next_page_token = None
+            result.progress.current_item_pages_processed = 0
+            _persist_checkpoint(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
 
         return _finalize_success(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
     except Exception as exc:  # noqa: BLE001
@@ -160,16 +192,15 @@ def _execute_playlist(
     _mark_running(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
     sink = create_sinks(output_dir=result.output_dir, output_formats=config.output_formats)
     try:
-        playlist_id = config.playlist_id or ""
-        _scan_playlist_pages(
+        playlist_ids = config.resolved_playlist_ids
+        _run_playlist_sequence(
             config=config,
             result=result,
             state_store=state_store,
             seen_ids=seen_ids,
             sink=sink,
-            playlist_id=playlist_id,
+            playlist_ids=playlist_ids,
             source_channel_id=config.channel_id,
-            initial_page_token=result.progress.next_page_token,
         )
         return _finalize_success(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
     except Exception as exc:  # noqa: BLE001
@@ -198,47 +229,15 @@ def _execute_channel(
         channel_id = config.channel_id or ""
         playlists = youtube.get_channel_playlists(channel_id)
         playlist_ids = [item.get("id") for item in playlists if item.get("id")]
-        if result.progress.total_playlists == 0:
-            result.progress.total_playlists = len(playlist_ids)
-        if not playlist_ids:
-            return _finalize_success(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
-
-        start_index = min(result.progress.current_playlist_index, len(playlist_ids))
-        resume_playlist_id = result.progress.current_playlist_id
-        resume_page_token = result.progress.next_page_token
-        for playlist_index in range(start_index, len(playlist_ids)):
-            if result.progress.pages_processed >= config.max_pages:
-                break
-
-            playlist_id = playlist_ids[playlist_index]
-            result.progress.current_playlist_index = playlist_index
-            result.progress.current_playlist_id = playlist_id
-            _persist_checkpoint(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
-
-            resume_token = None
-            if (
-                playlist_index == start_index
-                and resume_playlist_id == playlist_id
-                and resume_page_token
-            ):
-                resume_token = resume_page_token
-
-            _scan_playlist_pages(
-                config=config,
-                result=result,
-                state_store=state_store,
-                seen_ids=seen_ids,
-                sink=sink,
-                playlist_id=playlist_id,
-                source_channel_id=channel_id,
-                initial_page_token=resume_token,
-            )
-
-            result.progress.processed_playlists = playlist_index + 1
-            result.progress.current_playlist_index = playlist_index + 1
-            result.progress.current_playlist_id = None
-            result.progress.next_page_token = None
-            _persist_checkpoint(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
+        _run_playlist_sequence(
+            config=config,
+            result=result,
+            state_store=state_store,
+            seen_ids=seen_ids,
+            sink=sink,
+            playlist_ids=playlist_ids,
+            source_channel_id=channel_id,
+        )
 
         return _finalize_success(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
     except Exception as exc:  # noqa: BLE001
@@ -254,6 +253,60 @@ def _execute_channel(
         sink.close()
 
 
+def _run_playlist_sequence(
+    config: RunConfig,
+    result: RunResult,
+    state_store: RunStateStore,
+    seen_ids: set[str],
+    sink,
+    playlist_ids: list[str],
+    source_channel_id: str | None,
+) -> None:
+    """Scan a playlist list in order with checkpoint-aware resume support."""
+    if result.progress.total_playlists == 0:
+        result.progress.total_playlists = len(playlist_ids)
+    if not playlist_ids:
+        return
+
+    start_index = min(result.progress.current_playlist_index, len(playlist_ids))
+    resume_playlist_id = result.progress.current_playlist_id
+    resume_page_token = result.progress.next_page_token
+    for playlist_index in range(start_index, len(playlist_ids)):
+        playlist_id = playlist_ids[playlist_index]
+        result.progress.current_playlist_index = playlist_index
+        result.progress.current_playlist_id = playlist_id
+        _persist_checkpoint(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
+
+        resume_token = None
+        resume_item_pages = 0
+        if (
+            playlist_index == start_index
+            and resume_playlist_id == playlist_id
+            and resume_page_token
+        ):
+            resume_token = resume_page_token
+            resume_item_pages = max(0, result.progress.current_item_pages_processed)
+
+        _scan_playlist_pages(
+            config=config,
+            result=result,
+            state_store=state_store,
+            seen_ids=seen_ids,
+            sink=sink,
+            playlist_id=playlist_id,
+            source_channel_id=source_channel_id,
+            initial_page_token=resume_token,
+            initial_item_pages_processed=resume_item_pages,
+        )
+
+        result.progress.processed_playlists = playlist_index + 1
+        result.progress.current_playlist_index = playlist_index + 1
+        result.progress.current_playlist_id = None
+        result.progress.next_page_token = None
+        result.progress.current_item_pages_processed = 0
+        _persist_checkpoint(config=config, result=result, state_store=state_store, seen_ids=seen_ids)
+
+
 def _scan_playlist_pages(
     config: RunConfig,
     result: RunResult,
@@ -263,6 +316,7 @@ def _scan_playlist_pages(
     playlist_id: str,
     source_channel_id: str | None,
     initial_page_token: str | None,
+    initial_item_pages_processed: int = 0,
 ) -> None:
     """Scan playlist pages and stream fetched videos to sinks.
 
@@ -270,8 +324,9 @@ def _scan_playlist_pages(
     """
     page_token = initial_page_token
     consecutive_empty_pages = 0
+    item_pages_processed = max(0, initial_item_pages_processed)
 
-    while result.progress.pages_processed < config.max_pages:
+    while item_pages_processed < config.max_pages:
         response = youtube.playlist_items_list(
             playlist_id=playlist_id,
             page_token=page_token,
@@ -280,6 +335,8 @@ def _scan_playlist_pages(
         result.progress.quota_estimate += 1
 
         result.progress.pages_processed += 1
+        item_pages_processed += 1
+        result.progress.current_item_pages_processed = item_pages_processed
         page_number = result.progress.pages_processed
         page_items = response.get("items", [])
         page_video_ids = _extract_playlist_video_ids(page_items)
@@ -294,6 +351,7 @@ def _scan_playlist_pages(
             page_number=page_number,
             source_playlist_id=playlist_id,
             source_channel_id=source_channel_id,
+            source_query=None,
             consecutive_empty_pages=consecutive_empty_pages,
         )
 
@@ -317,6 +375,7 @@ def _process_video_ids_for_page(
     page_number: int,
     source_playlist_id: str | None,
     source_channel_id: str | None,
+    source_query: str | None,
     consecutive_empty_pages: int,
 ) -> int:
     """Process a page of video IDs: dedupe, fetch metadata, write sink rows."""
@@ -347,11 +406,11 @@ def _process_video_ids_for_page(
         sink.write_record(
             _item_to_record(
                 item=item,
-                config=config,
                 page_number=page_number,
                 rank_in_run=rank_map.get(video_id),
                 source_playlist_id=source_playlist_id,
                 source_channel_id=source_channel_id,
+                source_query=source_query,
             )
         )
 
@@ -480,11 +539,11 @@ def _build_rank_map(video_ids: list[str], base_rank: int) -> dict[str, int]:
 
 def _item_to_record(
     item: dict,
-    config: RunConfig,
     page_number: int,
     rank_in_run: int | None,
     source_playlist_id: str | None,
     source_channel_id: str | None,
+    source_query: str | None,
 ) -> VideoRecord:
     """Normalize raw `videos.list` payload into a `VideoRecord`."""
     snippet = item.get("snippet", {})
@@ -499,7 +558,7 @@ def _item_to_record(
         channel_title=snippet.get("channelTitle"),
         source_playlist_id=source_playlist_id,
         source_channel_id=source_channel_id,
-        source_query=config.query,
+        source_query=source_query,
         rank_in_run=rank_in_run,
         page_number=page_number,
     )

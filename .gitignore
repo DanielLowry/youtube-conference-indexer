@@ -69,3 +69,7 @@ data/
 .idea/
 .vscode/
 *.swp
+
+
+# Runs
+runs/

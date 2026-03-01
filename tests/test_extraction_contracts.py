@@ -17,6 +17,8 @@ def test_run_config_defaults_for_search():
     assert cfg.output_root == "./runs"
     assert cfg.output_formats == [OutputFormat.JSONL, OutputFormat.CSV]
     assert cfg.max_results == 500
+    assert cfg.queries == ["cppcon allocators"]
+    assert cfg.resolved_queries == ["cppcon allocators"]
 
 
 def test_run_config_requires_mode_specific_fields():
@@ -26,6 +28,24 @@ def test_run_config_requires_mode_specific_fields():
         RunConfig(mode=ExtractionMode.PLAYLIST)
     with pytest.raises(ValueError):
         RunConfig(mode=ExtractionMode.CHANNEL)
+
+
+def test_run_config_accepts_multiple_search_and_playlist_inputs():
+    search_cfg = RunConfig(
+        mode=ExtractionMode.SEARCH,
+        query="first",
+        queries=["second", "first", "  second ", "third"],
+    )
+    playlist_cfg = RunConfig(
+        mode=ExtractionMode.PLAYLIST,
+        playlist_id="PL1",
+        playlist_ids=["PL2", "PL1", "  PL2  ", "PL3"],
+    )
+
+    assert search_cfg.query == "first"
+    assert search_cfg.resolved_queries == ["first", "second", "third"]
+    assert playlist_cfg.playlist_id == "PL1"
+    assert playlist_cfg.resolved_playlist_ids == ["PL1", "PL2", "PL3"]
 
 
 def test_run_config_rejects_invalid_date_window():

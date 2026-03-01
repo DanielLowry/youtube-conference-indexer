@@ -50,25 +50,25 @@
             </div>
 
             <div x-show="mode === 'search'">
-                <label for="query" class="block text-sm font-medium text-gray-700">Search query</label>
-                <input
+                <label for="query" class="block text-sm font-medium text-gray-700">Search queries</label>
+                <textarea
                     id="query"
                     name="query"
-                    type="text"
-                    placeholder="e.g. CppCon allocator"
+                    rows="3"
+                    placeholder="One per line or comma-separated&#10;e.g. CppCon allocator&#10;C++Now memory resource"
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
+                ></textarea>
             </div>
 
             <div x-show="mode === 'playlist'">
-                <label for="playlist_id" class="block text-sm font-medium text-gray-700">Playlist ID</label>
-                <input
+                <label for="playlist_id" class="block text-sm font-medium text-gray-700">Playlist IDs</label>
+                <textarea
                     id="playlist_id"
                     name="playlist_id"
-                    type="text"
-                    placeholder="PL..."
+                    rows="3"
+                    placeholder="One per line or comma-separated&#10;PL...&#10;PL..."
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
+                ></textarea>
             </div>
 
             <div x-show="mode === 'channel' || mode === 'search'">
@@ -132,7 +132,7 @@
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                    <label for="max_pages" class="block text-sm font-medium text-gray-700">Max pages (1-50)</label>
+                    <label for="max_pages" class="block text-sm font-medium text-gray-700">Max pages per query/playlist (1-50)</label>
                     <input id="max_pages" name="max_pages" type="number" min="1" max="50" value="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
                 </div>
                 <div>

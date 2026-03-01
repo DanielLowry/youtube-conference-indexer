@@ -50,12 +50,25 @@ def _build_run_parser(subparsers) -> None:
     )
 
     # Source selectors
-    run_parser.add_argument("--playlist-id")
+    run_parser.add_argument(
+        "--playlist-id",
+        action="append",
+        help="Repeat for multiple playlists, e.g. --playlist-id PL1 --playlist-id PL2",
+    )
     run_parser.add_argument("--channel-id")
-    run_parser.add_argument("--query")
+    run_parser.add_argument(
+        "--query",
+        action="append",
+        help="Repeat for multiple search inputs, e.g. --query 'cppcon allocator' --query 'cppnow pmr'",
+    )
 
     # Common controls
-    run_parser.add_argument("--max-pages", type=int, default=10)
+    run_parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=10,
+        help="Maximum pages per query (search) or per playlist (playlist/channel)",
+    )
     run_parser.add_argument("--stop-after-empty-pages", type=int, default=2)
     run_parser.add_argument("--no-dedupe-within-run", action="store_true")
 
@@ -86,14 +99,18 @@ def _config_from_args(args) -> RunConfig:
     Validation and mode-specific requirements are enforced by `RunConfig`.
     """
     output_formats = args.output_format or [OutputFormat.JSONL.value, OutputFormat.CSV.value]
+    playlist_ids = args.playlist_id or []
+    queries = args.query or []
     return RunConfig(
         mode=ExtractionMode(args.mode),
         run_id=args.run_id,
         output_root=args.output_root,
         output_formats=[OutputFormat(fmt) for fmt in output_formats],
-        playlist_id=args.playlist_id,
+        playlist_id=playlist_ids[0] if playlist_ids else None,
+        playlist_ids=playlist_ids,
         channel_id=args.channel_id,
-        query=args.query,
+        query=queries[0] if queries else None,
+        queries=queries,
         dedupe_within_run=not args.no_dedupe_within_run,
         max_pages=args.max_pages,
         stop_after_empty_pages=args.stop_after_empty_pages,

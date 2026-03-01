@@ -34,9 +34,13 @@
         <div>Existing IDs: {{ run.progress.existing_video_ids }}</div>
         <div>Videos fetched: {{ run.progress.videos_fetched }}</div>
         <div>Quota est: {{ run.progress.quota_estimate }}</div>
-        {% if run.mode == "channel" %}
+        {% if run.progress.total_playlists %}
         <div>Playlists: {{ run.progress.processed_playlists }}/{{ run.progress.total_playlists }}</div>
         <div>Current playlist: {{ run.progress.current_playlist_id or "-" }}</div>
+        {% endif %}
+        {% if run.progress.total_queries %}
+        <div>Queries: {{ run.progress.processed_queries }}/{{ run.progress.total_queries }}</div>
+        <div>Current query: {{ run.progress.current_query or "-" }}</div>
         {% endif %}
     </div>
 

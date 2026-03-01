@@ -52,3 +52,38 @@ def test_cli_resume_invokes_resume_service(monkeypatch, capsys):
     assert captured == {"run_id": "run-abc", "output_root": "./tmp-runs"}
     payload = json.loads(output)
     assert payload["run_id"] == "run-abc"
+
+
+def test_cli_run_supports_repeated_source_flags(monkeypatch, capsys):
+    captured = {}
+
+    def _fake_run(config):
+        captured["queries"] = config.resolved_queries
+        captured["playlist_ids"] = config.resolved_playlist_ids
+        return RunResult(
+            run_id="run-2",
+            mode=ExtractionMode.SEARCH,
+            status=RunStatus.SUCCEEDED,
+            output_dir="./runs/run-2",
+        )
+
+    monkeypatch.setattr(cli, "run_extraction", _fake_run)
+
+    exit_code = cli.main(
+        [
+            "run",
+            "--mode",
+            "search",
+            "--query",
+            "cppcon allocator",
+            "--query",
+            "cppnow pmr",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert captured["queries"] == ["cppcon allocator", "cppnow pmr"]
+    assert captured["playlist_ids"] == []
+    payload = json.loads(output)
+    assert payload["run_id"] == "run-2"
