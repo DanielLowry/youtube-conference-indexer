@@ -45,29 +45,40 @@ DOWNLOAD_MIME_TYPES = {
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Validate configured API key on startup for immediate UI feedback."""
-    key = youtube.get_api_key()
-    if key and "your_api_key_here" not in key:
-        ok, message = youtube.validate_api_key()
-        state.api_key_status_message = message
-        state.api_key_validation_ok = ok
-        if not ok:
-            logger.warning("API key validation failed on startup: %s", message)
+    """Bootstrap persisted API keys on startup without consuming extra quota."""
+    youtube.bootstrap_api_keys()
     yield
 
 
 app = FastAPI(lifespan=lifespan)
 
 
-def _api_key_context() -> dict[str, Any]:
+def _api_key_context(dashboard: dict[str, Any] | None = None) -> dict[str, Any]:
     """Build API-key-specific UI context flags and status text."""
-    key = youtube.get_api_key()
-    key_present = bool(key) and "your_api_key_here" not in key
+    dashboard = dashboard or youtube.list_api_keys_dashboard()
+    primary_summary = next((item for item in dashboard["keys"] if item["is_primary"]), None)
     return {
-        "api_key_valid": youtube.has_valid_key() if key_present else False,
+        "api_key_valid": dashboard["has_usable_key"],
+        "api_key_present": dashboard["has_any_key"],
         "api_key_status_message": state.api_key_status_message,
         "api_key_validation_ok": state.api_key_validation_ok,
+        "api_key_summary": primary_summary,
+        "api_key_count": len(dashboard["keys"]),
     }
+
+
+def _api_key_page_context() -> dict[str, Any]:
+    """Build dashboard context for the API keys management page."""
+    dashboard = youtube.list_api_keys_dashboard()
+    context = _api_key_context(dashboard)
+    context.update(
+        {
+            "api_keys": dashboard["keys"],
+            "quota_day": dashboard["quota_day"],
+            "quota_timezone_label": dashboard["quota_timezone_label"],
+        }
+    )
+    return context
 
 
 def _parse_optional_datetime(value: str | None) -> datetime.datetime | None:
@@ -313,6 +324,11 @@ async def submit_run(
     output_formats: list[str] | None = Form(None),
 ):
     """Create a run config, initialize checkpoint files, and queue background run."""
+    if not youtube.has_valid_key():
+        context = _home_context(error_message="No valid YouTube API key configured or available right now.")
+        context["request"] = request
+        return templates.TemplateResponse(request, "index.html", context, status_code=400)
+
     try:
         extraction_mode = ExtractionMode(mode)
         parsed_queries = _parse_multi_inputs(query)
@@ -386,37 +402,76 @@ async def download_run_artifact(run_id: str, output_format: str):
 
 @app.get("/api-key", response_class=HTMLResponse)
 async def api_key_form(request: Request):
-    """Render API key settings form."""
+    """Render API key settings dashboard."""
     return templates.TemplateResponse(
         request,
         "api-key.html",
         {
             "request": request,
-            **_api_key_context(),
+            **_api_key_page_context(),
         },
     )
 
 
 @app.post("/api-key", response_class=HTMLResponse)
-async def set_api_key(request: Request, key: str = Form(...)):
-    """Save API key in-memory and validate with a lightweight probe."""
-    youtube.set_api_key(key.strip())
-    ok, message = youtube.validate_api_key()
+async def set_api_key(
+    request: Request,
+    key: str = Form(...),
+    label: str | None = Form(None),
+    make_primary: bool = Form(False),
+):
+    """Add/update one API key, validate it, and persist the result."""
+    record = youtube.add_api_key(key=key.strip(), label=label, make_primary=make_primary)
+    ok, message = youtube.validate_api_key(record.id)
     state.api_key_status_message = message
     state.api_key_validation_ok = ok
     if not ok:
+        context = _api_key_page_context()
+        context["request"] = request
         return templates.TemplateResponse(
             request,
             "api-key.html",
-            {
-                "request": request,
-                "api_key_valid": False,
-                "api_key_status_message": message,
-                "api_key_validation_ok": ok,
-            },
+            context,
             status_code=400,
         )
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/api-key", status_code=303)
+
+
+@app.post("/api-key/{key_id}/validate", response_class=HTMLResponse)
+async def validate_saved_api_key(request: Request, key_id: str):
+    """Revalidate one previously saved API key."""
+    if not youtube.api_key_store.get_key(key_id):
+        raise HTTPException(status_code=404, detail="API key not found")
+    ok, message = youtube.validate_api_key(key_id)
+    state.api_key_status_message = message
+    state.api_key_validation_ok = ok
+    if not ok:
+        context = _api_key_page_context()
+        context["request"] = request
+        return templates.TemplateResponse(request, "api-key.html", context, status_code=400)
+    return RedirectResponse(url="/api-key", status_code=303)
+
+
+@app.post("/api-key/{key_id}/primary", response_class=RedirectResponse)
+async def set_primary_saved_api_key(key_id: str):
+    """Select which stored API key should be used first."""
+    if not youtube.api_key_store.get_key(key_id):
+        raise HTTPException(status_code=404, detail="API key not found")
+    record = youtube.set_primary_api_key(key_id)
+    state.api_key_status_message = f"{record.label} is now the primary API key."
+    state.api_key_validation_ok = True
+    return RedirectResponse(url="/api-key", status_code=303)
+
+
+@app.post("/api-key/{key_id}/delete", response_class=RedirectResponse)
+async def delete_saved_api_key(key_id: str):
+    """Delete one stored API key from the local registry."""
+    deleted = youtube.delete_api_key(key_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="API key not found")
+    state.api_key_status_message = "API key deleted."
+    state.api_key_validation_ok = True
+    return RedirectResponse(url="/api-key", status_code=303)
 
 
 @app.get("/search", response_class=RedirectResponse)

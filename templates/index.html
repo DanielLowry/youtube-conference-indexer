@@ -12,9 +12,19 @@
 </div>
 {% endif %}
 
+{% if api_key_summary %}
+<div class="mb-4 p-3 rounded bg-white border border-gray-200 text-sm text-gray-800">
+    Primary API key:
+    <span class="font-semibold">{{ api_key_summary.label }}</span>
+    <span class="font-mono text-gray-600">{{ api_key_summary.masked_key }}</span>
+    <span class="text-gray-600">| today est. {{ api_key_summary.today_quota_units }} units</span>
+    <a href="/api-key" class="underline font-semibold ml-2">Manage keys</a>
+</div>
+{% endif %}
+
 {% if not api_key_valid %}
 <div class="mb-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">
-    No valid YouTube API key configured. Set one on the <a href="/api-key" class="underline font-semibold">API Key page</a>.
+    No valid YouTube API key configured or available right now. Set one on the <a href="/api-key" class="underline font-semibold">API Keys page</a>.
 </div>
 {% endif %}
 

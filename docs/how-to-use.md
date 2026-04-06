@@ -18,6 +18,11 @@ Create `.env` in repo root:
 YOUTUBE_API_KEY=your_api_key_here
 ```
 
+Optional:
+```dotenv
+YOUTUBE_API_KEYS_PATH=data/api_keys.json
+```
+
 ## Run the web UI
 ```bash
 uv run uvicorn app.main:app --reload
@@ -26,7 +31,8 @@ uv run uvicorn app.main:app --reload
 Open http://127.0.0.1:8000.
 
 ## UI workflow (exact routes)
-1. Set or validate your API key on `/api-key`.
+1. Add or validate one or more API keys on `/api-key`.
+   - Select which key is primary; the app uses it first and falls back to other configured keys if that key hits quota exhaustion.
 2. Open `/` (or `/runs`) and submit a run in one mode:
    - `search` (query + optional filters)
    - `playlist` (playlist ID)
@@ -86,6 +92,9 @@ uv run python -m app.cli resume <run_id>
   - each `playlistItems.list` page is estimated as `1` unit
   - each `videos.list` batch call is estimated as `1` unit
 - Check `summary.json -> progress.quota_estimate` per run.
+- The `/api-key` dashboard tracks successful app-estimated usage per stored key and per YouTube quota day.
+- The dashboard uses local app accounting, not a live read from the Google quota console.
+- Keys from the same Google Cloud project still share the same upstream YouTube quota pool.
 - Keep `max_pages` bounded (default `10`, hard cap `50`).
 
 ## Output structure

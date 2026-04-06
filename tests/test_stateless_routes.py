@@ -193,7 +193,37 @@ async def test_download_route_returns_artifact(monkeypatch, tmp_path: Path):
 def _configure_test_app(monkeypatch, output_root: Path) -> None:
     """Patch app globals/services so route tests are deterministic and offline."""
     monkeypatch.setattr(main_module, "OUTPUT_ROOT", str(output_root))
-    monkeypatch.setattr(main_module.youtube, "get_api_key", lambda: "test-key")
+    monkeypatch.setattr(main_module.youtube, "bootstrap_api_keys", lambda: None)
+    monkeypatch.setattr(
+        main_module.youtube,
+        "list_api_keys_dashboard",
+        lambda history_days=7: {
+            "quota_day": "2026-04-06",
+            "quota_timezone_label": "America/Los_Angeles",
+            "keys": [
+                {
+                    "id": "key-1",
+                    "label": "Test key",
+                    "masked_key": "test...key",
+                    "is_primary": True,
+                    "validation_ok": True,
+                    "validation_message": "Validation skipped in tests",
+                    "last_validated_at": None,
+                    "last_used_at": None,
+                    "today_quota_units": 0,
+                    "today_request_count": 0,
+                    "total_quota_units": 0,
+                    "total_request_count": 0,
+                    "quota_exhausted_today": False,
+                    "quota_error_message": None,
+                    "last_quota_error_at": None,
+                    "recent_days": [],
+                }
+            ],
+            "has_any_key": True,
+            "has_usable_key": True,
+        },
+    )
     monkeypatch.setattr(main_module.youtube, "has_valid_key", lambda: True)
     monkeypatch.setattr(main_module.youtube, "validate_api_key", lambda: (True, "Validation skipped in tests"))
 
