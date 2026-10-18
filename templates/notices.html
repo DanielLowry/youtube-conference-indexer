@@ -1,0 +1,4 @@
+{% if api_key_status_message %}<div role="status" class="notice {{ 'success' if api_key_validation_ok else 'danger' }}">{{ api_key_status_message }}</div>{% endif %}
+{% if not api_key_valid %}<div class="notice danger">No valid YouTube API key configured or available right now. <a href="/api-key">Manage API keys</a> to enable extraction runs.</div>{% endif %}
+{% if error_message %}<div role="alert" class="notice danger">{{ error_message }}</div>{% endif %}
+{% if selected_run_id %}<div role="status" class="notice">Submitted run: <a href="/monitor?run_id={{ selected_run_id|urlencode }}"><code>{{ selected_run_id }}</code> · View live progress</a></div>{% endif %}

@@ -1,9 +1,1 @@
-{% if runs %}
-<div class="space-y-3">
-    {% for run in runs %}
-        {% include "run-status.html" %}
-    {% endfor %}
-</div>
-{% else %}
-<p class="text-sm text-gray-600">No extraction runs yet.</p>
-{% endif %}
+{% if runs %}<div class="run-stack">{% for run in runs %}{% include "run-status.html" %}{% endfor %}</div>{% else %}<div class="empty-state"><span class="empty-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h6l2 3h8v11H4Z"/><path d="M9 13h6m-3-3v6"/></svg></span><h3>No extraction runs yet.</h3><p>Your extraction progress and downloadable artifacts will appear here.</p><a href="/" class="button compact">Configure an extraction</a></div>{% endif %}

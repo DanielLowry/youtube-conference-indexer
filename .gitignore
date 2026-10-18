@@ -73,3 +73,5 @@ data/
 
 # Runs
 runs/
+# Local Stitch reference captures
+docs/stitch-references/

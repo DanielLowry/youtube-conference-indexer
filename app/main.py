@@ -24,6 +24,7 @@ from typing import Any
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 
 from . import youtube, state
 from .services.contracts import ExtractionMode, OutputFormat, RunConfig
@@ -51,6 +52,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 def _api_key_context(dashboard: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -269,10 +271,18 @@ async def read_root(request: Request):
 
 @app.get("/runs", response_class=HTMLResponse)
 async def list_runs_page(request: Request):
-    """Render the same dashboard under `/runs` for route discoverability."""
+    """Render run history and downloadable artifacts."""
     context = _home_context()
     context["request"] = request
-    return templates.TemplateResponse(request, "index.html", context)
+    return templates.TemplateResponse(request, "runs.html", context)
+
+
+@app.get("/monitor", response_class=HTMLResponse)
+async def monitor_page(request: Request):
+    """Render live progress without changing extraction state."""
+    context = _home_context(selected_run_id=request.query_params.get("run_id"))
+    context.update(request=request, monitor=True)
+    return templates.TemplateResponse(request, "runs.html", context)
 
 
 @app.get("/runs/list", response_class=HTMLResponse)
@@ -326,6 +336,8 @@ async def submit_run(
     """Create a run config, initialize checkpoint files, and queue background run."""
     if not youtube.has_valid_key():
         context = _home_context(error_message="No valid YouTube API key configured or available right now.")
+        form_data = await request.form()
+        context["form_values"] = {**dict(form_data), "output_formats": form_data.getlist("output_formats")}
         context["request"] = request
         return templates.TemplateResponse(request, "index.html", context, status_code=400)
 
@@ -354,6 +366,8 @@ async def submit_run(
         )
     except Exception as exc:  # noqa: BLE001
         context = _home_context(error_message=f"Invalid run configuration: {exc}")
+        form_data = await request.form()
+        context["form_values"] = {**dict(form_data), "output_formats": form_data.getlist("output_formats")}
         context["request"] = request
         return templates.TemplateResponse(request, "index.html", context, status_code=400)
 

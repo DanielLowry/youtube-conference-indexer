@@ -240,3 +240,49 @@ def _async_client() -> AsyncClient:
     """Build an AsyncClient backed by the FastAPI ASGI app."""
     transport = ASGITransport(app=main_module.app)
     return AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=False)
+
+
+@pytest.mark.anyio
+async def test_history_and_monitor_preserve_artifact_and_recovery_actions(monkeypatch, tmp_path):
+    output_root = tmp_path / "runs"
+    _configure_test_app(monkeypatch, output_root)
+    run_id = _seed_run(output_root)
+    summary_path = output_root / run_id / "summary.json"
+    payload = json.loads(summary_path.read_text())
+    payload["status"] = "failed"
+    payload["error_message"] = "Quota unavailable; resume later"
+    summary_path.write_text(json.dumps(payload))
+    (output_root / run_id / "videos.csv").write_text("id,title\nexample,Example\n")
+
+    async with _async_client() as client:
+        history = await client.get("/runs")
+        monitor = await client.get("/monitor", params={"run_id": run_id})
+
+    for response in (history, monitor):
+        assert response.status_code == 200
+        assert f'/runs/{run_id}/resume' in response.text
+        assert f'/runs/{run_id}/download/csv' in response.text
+        assert "Quota unavailable; resume later" in response.text
+        assert 'data-poll="/runs/list"' in response.text
+    assert "Runs History &amp; Artifacts" in history.text
+    assert "Active &amp; Live Run Monitor" in monitor.text
+    assert f'value="{run_id}"' in monitor.text
+
+
+@pytest.mark.anyio
+async def test_invalid_submission_retains_form_values_and_escapes_script_content(monkeypatch, tmp_path):
+    _configure_test_app(monkeypatch, tmp_path / "runs")
+    query = '</script><script>alert("example")</script>'
+    async with _async_client() as client:
+        response = await client.post("/runs", data={
+            "mode": "search", "query": query, "max_pages": "51",
+            "region_code": "GB", "output_formats": ["csv", "md"],
+        })
+    assert response.status_code == 400
+    match = re.search(r'<script id="form-values" type="application/json">(.*?)</script>', response.text)
+    assert match is not None
+    values = json.loads(match.group(1))
+    assert values["query"] == query
+    assert values["region_code"] == "GB"
+    assert values["output_formats"] == ["csv", "md"]
+    assert query not in response.text

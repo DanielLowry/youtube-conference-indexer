@@ -1,184 +1,33 @@
 {% extends "base.html" %}
-
 {% block content %}
-<h1 class="text-2xl font-bold mb-2">YouTube Metadata Extractor</h1>
-<p class="text-sm text-gray-700 mb-4">
-    Run playlist, channel, or bounded search extraction jobs and download output files from each run directory.
-</p>
-
-{% if api_key_status_message %}
-<div class="mb-4 p-3 rounded {{ 'bg-green-100 text-green-800 border border-green-300' if api_key_validation_ok else 'bg-red-100 text-red-800 border border-red-300' }}">
-    API key status: {{ api_key_status_message }}
+<div class="page-heading"><div><h1>New Extraction Console</h1><p>Configure a bounded extraction. Keep the metadata, skip the manual work.</p></div><span class="badge">YouTube Data API v3</span></div>
+{% include "notices.html" %}
+{% if form_values %}<script id="form-values" type="application/json">{{ form_values|tojson }}</script>{% endif %}
+<form id="extraction-form" action="/runs" method="post" class="workspace">
+<div class="config-column">
+<section class="panel scope-panel"><div><h2>Target Entity Scope</h2><p>Choose the source for your extraction.</p></div><div class="mode-switch" role="group" aria-label="Extraction mode">{% for value, label in [('search','Search'), ('playlist','Playlist'), ('channel','Channel')] %}<label><input type="radio" name="mode" value="{{ value }}" {% if value == 'search' %}checked{% endif %}><span>{{ label }}</span></label>{% endfor %}</div></section>
+<section class="panel stack">
+<div data-modes="search"><div class="section-heading"><label for="query">Search queries</label><span class="badge secondary">Multi-query batch</span></div><textarea id="query" name="query" rows="4" placeholder="One per line or comma-separated&#10;e.g. CppCon allocator&#10;C++Now memory resource"></textarea><div class="field-footer"><span id="query-count">0 queries queued</span><button type="button" class="text-button" data-clear="query">Clear queries</button></div></div>
+<div data-modes="playlist"><label for="playlist_id">Playlist IDs</label><textarea id="playlist_id" name="playlist_id" rows="4" placeholder="One per line or comma-separated&#10;PL..."></textarea><p>Use playlist IDs, rather than full URLs.</p></div>
+<div data-modes="search channel"><label for="channel_id">Channel ID <span class="muted">(optional for search)</span></label><input id="channel_id" name="channel_id" placeholder="UC…"><p>Required in Channel mode. Use the channel ID, rather than a handle or URL.</p></div>
+</section>
+<section class="panel stack" data-modes="search"><div class="section-heading"><h2>Publication window</h2><button type="button" class="text-button" id="reset-dates">Clear dates</button></div><div class="field-grid"><div><label for="published_after">Published after (UTC)</label><input id="published_after" name="published_after" type="datetime-local"></div><div><label for="published_before">Published before (UTC)</label><input id="published_before" name="published_before" type="datetime-local"></div></div></section>
+<section class="panel stack" data-modes="search"><h2>Search API specifics</h2><div class="field-grid three">
+<div><label for="video_duration">Video duration</label><select id="video_duration" name="video_duration"><option value="any">Any duration</option><option value="short">Short (&lt; 4 min)</option><option value="medium">Medium (4–20 min)</option><option value="long">Long (&gt; 20 min)</option></select></div>
+<div><label for="order_by">Result sort order</label><select id="order_by" name="order_by"><option value="relevance">Relevance</option><option value="date">Date</option><option value="viewCount">View count</option><option value="rating">Rating</option></select></div>
+<div><label for="region_code">Region code</label><input id="region_code" name="region_code" maxlength="2" placeholder="e.g. US"></div>
+<div><label for="relevance_language">Relevance language</label><input id="relevance_language" name="relevance_language" maxlength="5" placeholder="e.g. en"></div>
+<div><label for="safe_search">Safe search</label><select id="safe_search" name="safe_search"><option value="">Default</option><option value="none">None</option><option value="moderate">Moderate</option><option value="strict">Strict</option></select></div>
+</div></section>
+<div class="config-bottom"><section class="panel stack"><h2>Crawl depth & early stopping</h2><label for="max_pages">Max pages per query / playlist</label><div class="range-row"><input type="range" id="max_pages" name="max_pages" min="1" max="50" value="10"><output for="max_pages" id="page-value">10</output></div><div class="field-footer"><span>1 page</span><span>50 pages · 2,500 results max</span></div><div class="step-field"><div><label for="stop_after_empty_pages">Stop after empty pages</label><p>Bound requests when no new results arrive.</p></div><input id="stop_after_empty_pages" name="stop_after_empty_pages" type="number" min="1" value="2"></div></section>
+<fieldset class="panel stack"><legend class="sr-only">Output formats</legend><h2>Artifact exporters</h2>{% for value, title, desc in [('jsonl','JSONL stream','For data pipelines and LLM processing'),('csv','Flat CSV table','For spreadsheets, DuckDB and Pandas'),('md','Markdown digest','A readable metadata catalog')] %}<label class="format-option"><input name="output_formats" type="checkbox" value="{{ value }}" {% if value != 'md' %}checked{% endif %}><span><strong>{{ title }}</strong><small>{{ desc }}</small></span><code>.{{ value }}</code></label>{% endfor %}<p>Defaults to JSONL and CSV if none selected.</p></fieldset></div>
 </div>
-{% endif %}
-
-{% if api_key_summary %}
-<div class="mb-4 p-3 rounded bg-white border border-gray-200 text-sm text-gray-800">
-    Primary API key:
-    <span class="font-semibold">{{ api_key_summary.label }}</span>
-    <span class="font-mono text-gray-600">{{ api_key_summary.masked_key }}</span>
-    <span class="text-gray-600">| today est. {{ api_key_summary.today_quota_units }} units</span>
-    <a href="/api-key" class="underline font-semibold ml-2">Manage keys</a>
-</div>
-{% endif %}
-
-{% if not api_key_valid %}
-<div class="mb-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">
-    No valid YouTube API key configured or available right now. Set one on the <a href="/api-key" class="underline font-semibold">API Keys page</a>.
-</div>
-{% endif %}
-
-{% if error_message %}
-<div class="mb-4 p-3 rounded bg-red-100 text-red-800 border border-red-300">
-    {{ error_message }}
-</div>
-{% endif %}
-
-{% if selected_run_id %}
-<div class="mb-4 p-3 rounded bg-blue-100 text-blue-900 border border-blue-300">
-    Submitted run: <span class="font-mono">{{ selected_run_id }}</span>
-</div>
-{% endif %}
-
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-    <section class="bg-white p-4 rounded shadow" x-data="{mode: 'search'}">
-        <h2 class="text-lg font-semibold mb-3">Start Extraction Run</h2>
-
-        <form action="/runs" method="post" class="space-y-3">
-            <div>
-                <label for="mode" class="block text-sm font-medium text-gray-700">Mode</label>
-                <select
-                    id="mode"
-                    name="mode"
-                    x-model="mode"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                >
-                    <option value="search">Search</option>
-                    <option value="playlist">Playlist</option>
-                    <option value="channel">Channel</option>
-                </select>
-            </div>
-
-            <div x-show="mode === 'search'">
-                <label for="query" class="block text-sm font-medium text-gray-700">Search queries</label>
-                <textarea
-                    id="query"
-                    name="query"
-                    rows="3"
-                    placeholder="One per line or comma-separated&#10;e.g. CppCon allocator&#10;C++Now memory resource"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                ></textarea>
-            </div>
-
-            <div x-show="mode === 'playlist'">
-                <label for="playlist_id" class="block text-sm font-medium text-gray-700">Playlist IDs</label>
-                <textarea
-                    id="playlist_id"
-                    name="playlist_id"
-                    rows="3"
-                    placeholder="One per line or comma-separated&#10;PL...&#10;PL..."
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                ></textarea>
-            </div>
-
-            <div x-show="mode === 'channel' || mode === 'search'">
-                <label for="channel_id" class="block text-sm font-medium text-gray-700">
-                    Channel ID <span class="text-gray-500">(required for channel mode, optional for search mode)</span>
-                </label>
-                <input
-                    id="channel_id"
-                    name="channel_id"
-                    type="text"
-                    placeholder="UC..."
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
-            </div>
-
-            <div x-show="mode === 'search'" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label for="published_after" class="block text-sm font-medium text-gray-700">Published after (UTC)</label>
-                    <input id="published_after" name="published_after" type="datetime-local" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
-                </div>
-                <div>
-                    <label for="published_before" class="block text-sm font-medium text-gray-700">Published before (UTC)</label>
-                    <input id="published_before" name="published_before" type="datetime-local" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
-                </div>
-                <div>
-                    <label for="video_duration" class="block text-sm font-medium text-gray-700">Video duration</label>
-                    <select id="video_duration" name="video_duration" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                        <option value="any">Any</option>
-                        <option value="short">Short</option>
-                        <option value="medium">Medium</option>
-                        <option value="long">Long</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="order_by" class="block text-sm font-medium text-gray-700">Order</label>
-                    <select id="order_by" name="order_by" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                        <option value="relevance">Relevance</option>
-                        <option value="date">Date</option>
-                        <option value="viewCount">View count</option>
-                        <option value="rating">Rating</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="region_code" class="block text-sm font-medium text-gray-700">Region code</label>
-                    <input id="region_code" name="region_code" type="text" maxlength="2" placeholder="US" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
-                </div>
-                <div>
-                    <label for="relevance_language" class="block text-sm font-medium text-gray-700">Relevance language</label>
-                    <input id="relevance_language" name="relevance_language" type="text" maxlength="5" placeholder="en" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
-                </div>
-                <div>
-                    <label for="safe_search" class="block text-sm font-medium text-gray-700">Safe search</label>
-                    <select id="safe_search" name="safe_search" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                        <option value="">Default</option>
-                        <option value="none">None</option>
-                        <option value="moderate">Moderate</option>
-                        <option value="strict">Strict</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                    <label for="max_pages" class="block text-sm font-medium text-gray-700">Max pages per query/playlist (1-50)</label>
-                    <input id="max_pages" name="max_pages" type="number" min="1" max="50" value="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
-                </div>
-                <div>
-                    <label for="stop_after_empty_pages" class="block text-sm font-medium text-gray-700">Stop after empty pages</label>
-                    <input id="stop_after_empty_pages" name="stop_after_empty_pages" type="number" min="1" value="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
-                </div>
-            </div>
-
-            <fieldset>
-                <legend class="block text-sm font-medium text-gray-700">Output formats</legend>
-                <div class="mt-1 flex items-center gap-4 text-sm">
-                    <label class="inline-flex items-center gap-2">
-                        <input type="checkbox" name="output_formats" value="jsonl" checked />
-                        <span>JSONL</span>
-                    </label>
-                    <label class="inline-flex items-center gap-2">
-                        <input type="checkbox" name="output_formats" value="csv" checked />
-                        <span>CSV</span>
-                    </label>
-                </div>
-            </fieldset>
-
-            <button
-                type="submit"
-                class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            >
-                Start run
-            </button>
-        </form>
-    </section>
-
-    <section class="bg-white p-4 rounded shadow">
-        <h2 class="text-lg font-semibold mb-3">Runs</h2>
-        <div id="run-list" hx-get="/runs/list" hx-trigger="load, every 4s" hx-swap="innerHTML">
-            {% include "run-list.html" %}
-        </div>
-    </section>
-</div>
+<aside class="summary-column">
+<section class="panel api-health"><i class="dot {{ '' if api_key_valid else 'warning' }}"></i><div><h2>{{ 'API key available' if api_key_valid else 'API key required' }}</h2><p>{{ api_key_summary.label if api_key_summary else 'Add a key to start extracting' }}</p></div><a href="/api-key" class="text-button">Manage</a></section>
+<section class="panel stack"><h2>Run configuration</h2><div class="summary-metrics"><div><span>Sources queued</span><strong id="source-count">0</strong></div><div><span>Page limit / source</span><strong id="summary-pages">10</strong></div></div><div><label>Storage destination</label><code class="path">./runs/&lt;run_id&gt;/</code></div><div class="summary-note"><i class="dot"></i><span>Duplicate video IDs are removed within each run.</span></div><button type="submit" class="button primary" {% if not api_key_valid %}disabled{% endif %}>Start Extraction Run</button><p class="center">Runs in the local background. <a href="/monitor">View progress</a></p></section>
+<section class="terminal stack"><div class="section-heading"><h2>CLI equivalence</h2><button class="terminal-button" type="button" id="copy-cli">Copy</button></div><p>Run this configuration from your terminal.</p><pre><code id="cli-command"></code></pre><span id="copy-status" role="status"></span></section>
+<section class="panel stack"><h2>Quota awareness</h2><p>Search uses 100 quota units per page request. Video metadata requests add to this usage.</p>{% if api_key_summary %}<div class="key-summary"><span>{{ api_key_summary.masked_key }}</span><strong>{{ api_key_summary.today_quota_units }} units today</strong></div>{% endif %}<p>Usage is an app-tracked estimate, not the upstream quota balance.</p></section>
+</aside>
+</form>
+<section class="recent-section"><div class="section-heading"><h2>Recent extraction runs</h2><a href="/runs">View history</a></div><div id="run-list" data-poll="/runs/list">{% include "run-list.html" %}</div></section>
 {% endblock %}
